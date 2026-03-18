@@ -184,6 +184,7 @@
     let trailEnabled = true;
     let checkpointEnabled = true;
     let lamplightEnabled = false;
+    let monsters = [];
 
     // === GRID & MAZE GENERATION ===
 
@@ -374,6 +375,7 @@
       drawTrail();
       drawResetCounts();
       drawPlayer();
+      drawMonsters();
       drawParticles();
     }
 
@@ -550,6 +552,12 @@
       // Update checkpoint
       updateCheckpoint();
 
+      // Check if player walked into a monster
+      if (lamplightEnabled && monsters.some(m => m.x === player.x && m.y === player.y)) {
+        monsterCaughtPlayer();
+        return;
+      }
+
       // Auto-resume from checkpoint at structural dead ends (3 walls)
       if (isStructuralDeadEnd()) {
         resumeFromCheckpoint();
@@ -690,6 +698,99 @@
       }
     }
 
+    // === MONSTERS (Lamplight mode only) ===
+
+    function spawnMonsters() {
+      monsters = [];
+      if (!lamplightEnabled) return;
+      for (let i = 0; i < 3; i++) {
+        let mx, my;
+        // Spawn away from the player (at least 8 cells Manhattan distance)
+        do {
+          mx = Math.floor(Math.random() * COLS);
+          my = Math.floor(Math.random() * ROWS);
+        } while (Math.abs(mx - player.x) + Math.abs(my - player.y) < 8);
+        monsters.push({ x: mx, y: my, moveTimer: 0 });
+      }
+    }
+
+    function updateMonsters(dt) {
+      if (!lamplightEnabled || gameState !== 'playing') return;
+
+      for (const m of monsters) {
+        m.moveTimer += dt;
+        // Monsters move every 0.4 seconds — fast enough to feel alive,
+        // slow enough that the player can react
+        if (m.moveTimer < 0.4) continue;
+        m.moveTimer = 0;
+
+        // Collect passable directions from the monster's current cell
+        const dirs = [];
+        const cell = grid[m.y][m.x];
+        if (!cell.walls.n && m.y > 0) dirs.push([0, -1]);
+        if (!cell.walls.s && m.y < ROWS - 1) dirs.push([0, 1]);
+        if (!cell.walls.w && m.x > 0) dirs.push([-1, 0]);
+        if (!cell.walls.e && m.x < COLS - 1) dirs.push([1, 0]);
+
+        if (dirs.length > 0) {
+          const [dx, dy] = dirs[Math.floor(Math.random() * dirs.length)];
+          m.x += dx;
+          m.y += dy;
+        }
+
+        // Check collision with player
+        if (m.x === player.x && m.y === player.y) {
+          monsterCaughtPlayer();
+          return;
+        }
+      }
+    }
+
+    function monsterCaughtPlayer() {
+      // Reset player to the beginning
+      player.x = solutionPath[0][0];
+      player.y = solutionPath[0][1];
+      player.trail = [];
+      player.visitedSet = new Set([player.x + ',' + player.y]);
+      player.lastCheckpointIndex = 0;
+
+      spawnParticles(player.x * CELL + CELL / 2, player.y * CELL + CELL / 2, 15, 'teleport');
+
+      // Respawn monsters away from the new player position
+      spawnMonsters();
+      render();
+    }
+
+    function drawMonsters() {
+      if (!lamplightEnabled || gameState !== 'playing') return;
+
+      const GLOW_RADIUS = 3;
+      for (const m of monsters) {
+        const px = m.x * CELL;
+        const py = m.y * CELL;
+
+        // Check if monster is within the player's lamplight glow radius
+        const dist = Math.abs(m.x - player.x) + Math.abs(m.y - player.y);
+        const inGlow = dist <= GLOW_RADIUS;
+
+        if (inGlow) {
+          // In lamplight: draw as a soot ball — dark fuzzy circle filling the cell
+          const alpha = 1.0 - (dist / (GLOW_RADIUS + 1));
+          ctx.fillStyle = 'rgba(50, 40, 35, ' + alpha + ')';
+          ctx.fillRect(px + 1, py + 1, CELL - 2, CELL - 2);
+          // Beady red eyes on top of the soot ball
+          ctx.fillStyle = 'rgba(255, 50, 30, ' + alpha + ')';
+          ctx.fillRect(px + 2, py + 3, 1, 1);
+          ctx.fillRect(px + 5, py + 3, 1, 1);
+        } else {
+          // In the dark: only beady red eyes visible
+          ctx.fillStyle = '#ff3220';
+          ctx.fillRect(px + 2, py + 3, 1, 1);
+          ctx.fillRect(px + 5, py + 3, 1, 1);
+        }
+      }
+    }
+
     // === GAME LOOP ===
 
     let lastTime = 0;
@@ -699,6 +800,7 @@
       lastTime = timestamp;
 
       if (gameState === 'playing' || gameState === 'win') {
+        updateMonsters(dt);
         updateParticles(dt);
         render();
       }
@@ -724,6 +826,7 @@
       particles = [];
       checkpointResets = new Map();
       updateScoreboard();
+      spawnMonsters();
 
       gameState = 'playing';
       document.getElementById('start-screen').classList.add('hidden');
