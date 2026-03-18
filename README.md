@@ -4,7 +4,7 @@ A meditative browser-based maze explorer. Navigate procedurally-generated perfec
 
 **No build step. No dependencies. Open `index.html` and play.**
 
-**[🌐 Play in Browser](https://htmlpreview.github.io/?https://github.com/genejohnson/maze/blob/main/index.html)** · **📱 Mobile-friendly with on-screen D-pad**
+**[🌐 Play in Browser](https://htmlpreview.github.io/?https://github.com/genewildish/dungeon-maze/blob/main/index.html)** · **📱 Mobile-friendly with on-screen D-pad**
 
 ---
 
@@ -46,7 +46,7 @@ The game detects touch devices and shows a **D-pad in the bottom-left corner** f
 ### Launch on Your Phone
 
 **Easiest:** Open this link in your mobile browser:
-- [htmlpreview.github.io](https://htmlpreview.github.io/?https://github.com/genejohnson/maze/blob/main/index.html)
+- [htmlpreview.github.io](https://htmlpreview.github.io/?https://github.com/genewildish/dungeon-maze/blob/main/index.html)
 - Or download the repo and open `index.html` locally
 
 ### Touch Controls
