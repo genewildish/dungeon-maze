@@ -317,8 +317,13 @@
     }
 
     function generateMaze() {
-      createGrid();
-      generateSolutionPath();
+      // Minimum solution path length = distance between opposing corners.
+      // Regenerate if the path is too short (e.g. entrance/exit too close).
+      const minPathLength = (COLS - 1) + (ROWS - 1);
+      do {
+        createGrid();
+        generateSolutionPath();
+      } while (solutionPath.length < minPathLength);
       fillMaze();
     }
 
