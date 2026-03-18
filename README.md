@@ -4,6 +4,8 @@ A meditative browser-based maze explorer. Navigate procedurally-generated perfec
 
 **No build step. No dependencies. Open `index.html` and play.**
 
+**[🌐 Play in Browser](https://htmlpreview.github.io/?https://github.com/genejohnson/maze/blob/main/index.html)** · **📱 Mobile-friendly with on-screen D-pad**
+
 ---
 
 ## Quick Start
@@ -34,6 +36,27 @@ The game runs on **ClockworkPi uConsole** and similar handheld Linux devices wit
 - **D-pad center** (or **Enter** key) — start game / play again
 - **Escape** key — exit to desktop (the game puns: *"press escape to escape"*)
 - **Physical keyboard** — arrow keys work alongside D-pad
+
+---
+
+## Mobile / Phone / Tablet
+
+The game detects touch devices and shows a **D-pad in the bottom-left corner** for easy mobile play.
+
+### Launch on Your Phone
+
+**Easiest:** Open this link in your mobile browser:
+- [htmlpreview.github.io](https://htmlpreview.github.io/?https://github.com/genejohnson/maze/blob/main/index.html)
+- Or download the repo and open `index.html` locally
+
+### Touch Controls
+
+- **Arrow buttons** (▲ ▼ ◀ ▶) — tap to move one cell
+- **Checkboxes & START button** — tap to toggle options and begin
+- **HELP button** — tap during play to reset to checkpoint
+- **Escape key** — return to menu (on devices with a keyboard)
+
+The D-pad only appears on touch-capable devices; desktop browsers show arrow keys and gamepad as before.
 
 ---
 

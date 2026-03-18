@@ -118,6 +118,39 @@
       letter-spacing: 0.05em;
       font-style: italic;
     }
+    /* Mobile D-Pad (touch controls on phones/tablets) */
+    #mobile-dpad {
+      position: absolute;
+      bottom: 1rem;
+      left: 1rem;
+      display: flex;
+      flex-direction: column;
+      gap: 0.25rem;
+      align-items: center;
+      z-index: 10;
+    }
+    #mobile-dpad.hidden { display: none; }
+    .dpad-btn {
+      width: 3rem;
+      height: 3rem;
+      font-size: 1.5rem;
+      background: rgba(42, 42, 74, 0.85);
+      color: #ffdd57;
+      border: 2px solid #ffdd57;
+      border-radius: 0.25rem;
+      cursor: pointer;
+      user-select: none;
+      -webkit-user-select: none;
+      touch-action: manipulation;
+    }
+    .dpad-btn:active {
+      background: #ffdd57;
+      color: #0f0f23;
+    }
+    .dpad-row {
+      display: flex;
+      gap: 0.25rem;
+    }
   </style>
 </head>
 <body>
@@ -153,6 +186,16 @@
 
     <!-- Help Button (during gameplay) -->
     <button id="help-btn" class="hidden">HELP</button>
+
+    <!-- Mobile D-Pad (touch controls, shown only on touch devices) -->
+    <div id="mobile-dpad" class="hidden">
+      <button id="dpad-up" class="dpad-btn" data-dir="n">▲</button>
+      <div class="dpad-row">
+        <button id="dpad-left" class="dpad-btn" data-dir="w">◀</button>
+        <button id="dpad-down" class="dpad-btn" data-dir="s">▼</button>
+        <button id="dpad-right" class="dpad-btn" data-dir="e">▶</button>
+      </div>
+    </div>
   </div>
   <div id="scoreboard">
     <h3>RESETS</h3>
@@ -1119,6 +1162,27 @@
     // Wire up buttons
     document.getElementById('start-btn').addEventListener('click', startGame);
     document.getElementById('play-again-btn').addEventListener('click', playAgain);
+
+    // === MOBILE D-PAD ===
+    // Detect touch capability and show on-screen arrow buttons for phones/tablets.
+    // Buttons appear in bottom-left corner only on touch devices.
+    const isTouchDevice = () => {
+      return (('ontouchstart' in window) ||
+              (navigator.maxTouchPoints > 0) ||
+              (navigator.msMaxTouchPoints > 0));
+    };
+
+    if (isTouchDevice()) {
+      document.getElementById('mobile-dpad').classList.remove('hidden');
+
+      // Wire up D-pad buttons
+      document.querySelectorAll('.dpad-btn').forEach(btn => {
+        btn.addEventListener('click', () => {
+          const dir = btn.getAttribute('data-dir');
+          movePlayer(dir);
+        });
+      });
+    }
 
     // Start the game loop
     requestAnimationFrame(gameLoop);
