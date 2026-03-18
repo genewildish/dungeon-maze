@@ -277,27 +277,29 @@
       ctx.strokeStyle = COLORS.wall;
       ctx.lineWidth = 1;
 
+      ctx.beginPath();
       for (let y = 0; y < ROWS; y++) {
         for (let x = 0; x < COLS; x++) {
           const px = x * CELL;
           const py = y * CELL;
           const cell = grid[y][x];
 
-          ctx.beginPath();
           if (cell.walls.n) { ctx.moveTo(px, py + 0.5); ctx.lineTo(px + CELL, py + 0.5); }
           if (cell.walls.s) { ctx.moveTo(px, py + CELL - 0.5); ctx.lineTo(px + CELL, py + CELL - 0.5); }
           if (cell.walls.w) { ctx.moveTo(px + 0.5, py); ctx.lineTo(px + 0.5, py + CELL); }
           if (cell.walls.e) { ctx.moveTo(px + CELL - 0.5, py); ctx.lineTo(px + CELL - 0.5, py + CELL); }
-          ctx.stroke();
         }
       }
+      ctx.stroke();
 
       // Draw entry and exit openings with a highlight color
-      ctx.fillStyle = COLORS.wallHighlight;
-      const entryY = solutionPath[0][1];
-      ctx.fillRect(0, entryY * CELL + 1, 2, CELL - 2);
-      const exitY = solutionPath[solutionPath.length - 1][1];
-      ctx.fillRect(COLS * CELL - 2, exitY * CELL + 1, 2, CELL - 2);
+      if (solutionPath.length > 0) {
+        ctx.fillStyle = COLORS.wallHighlight;
+        const entryY = solutionPath[0][1];
+        ctx.fillRect(0, entryY * CELL + 1, 2, CELL - 2);
+        const exitY = solutionPath[solutionPath.length - 1][1];
+        ctx.fillRect(COLS * CELL - 2, exitY * CELL + 1, 2, CELL - 2);
+      }
     }
 
     function drawPlayer() {
