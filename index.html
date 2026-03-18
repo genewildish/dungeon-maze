@@ -145,7 +145,7 @@
     let gameState = 'start'; // start | playing | deadEnd | win
     let grid = [];
     let solutionPath = [];
-    let player = { x: 0, y: 0, lastCheckpointIndex: 0, trail: [] };
+    let player = { x: 0, y: 0, lastCheckpointIndex: 0, trail: [], visitedSet: new Set() };
     let particles = [];
     let trailEnabled = true;
     let checkpointEnabled = true;
@@ -357,9 +357,11 @@
       const nx = player.x + dx;
       const ny = player.y + dy;
 
+      player.visitedSet.add(player.x + ',' + player.y);
       player.trail.push([player.x, player.y]);
       player.x = nx;
       player.y = ny;
+      player.visitedSet.add(nx + ',' + ny);
 
       // Spawn movement sparkles
       spawnParticles(player.x * CELL + CELL / 2, player.y * CELL + CELL / 2, 3, 'move');
@@ -417,16 +419,13 @@
     function isDeadEnd() {
       // Spec-aligned: dead end = all immediate passable neighbors are already visited.
       // The player cannot move to any unvisited cell directly from where they stand.
-      const visited = new Set(player.trail.map(t => t[0] + ',' + t[1]));
-      visited.add(player.x + ',' + player.y);
-
       const directions = [
         ['n', 0, -1], ['s', 0, 1], ['w', -1, 0], ['e', 1, 0]
       ];
       for (const [dir, dx, dy] of directions) {
         if (canMove(player.x, player.y, dir)) {
           const key = (player.x + dx) + ',' + (player.y + dy);
-          if (!visited.has(key)) return false;
+          if (!player.visitedSet.has(key)) return false;
         }
       }
       return true;
@@ -445,6 +444,7 @@
       player.x = solutionPath[0][0];
       player.y = solutionPath[0][1];
       player.trail = [];
+      player.visitedSet = new Set([player.x + ',' + player.y]);
       player.lastCheckpointIndex = 0;
       document.getElementById('dead-end-screen').classList.add('hidden');
       document.getElementById('help-btn').classList.remove('hidden');
@@ -469,8 +469,12 @@
       }
       if (cpTrailIdx >= 0) {
         player.trail = player.trail.slice(0, cpTrailIdx + 1);
+      } else {
+        player.trail = [];
       }
-      // If checkpoint cell not in trail (player started there), clear entire trail
+      // Rebuild visitedSet from trimmed trail
+      player.visitedSet = new Set(player.trail.map(t => t[0] + ',' + t[1]));
+      player.visitedSet.add(player.x + ',' + player.y);
 
       spawnParticles(player.x * CELL + CELL / 2, player.y * CELL + CELL / 2, 10, 'teleport');
 
@@ -543,6 +547,7 @@
       player.x = solutionPath[0][0];
       player.y = solutionPath[0][1];
       player.trail = [];
+      player.visitedSet = new Set([player.x + ',' + player.y]);
       player.lastCheckpointIndex = 0;
       buildSolutionSet();
       particles = [];
@@ -573,6 +578,8 @@
     }
 
     function playAgain() {
+      gameState = 'start';
+      particles = [];
       document.getElementById('win-screen').classList.add('hidden');
       document.getElementById('start-screen').classList.remove('hidden');
     }
