@@ -326,6 +326,263 @@
       }
       ctx.globalAlpha = 1;
     }
+
+    // === PLAYER & INPUT ===
+
+    function canMove(x, y, dir) {
+      // Block moving back out the entrance
+      if (dir === 'w' && x === 0) return false;
+      // Block east movement off the grid (exit handled separately in movePlayer)
+      if (dir === 'e' && x === COLS - 1) return false;
+      if (dir === 'n') return !grid[y][x].walls.n && y > 0;
+      if (dir === 's') return !grid[y][x].walls.s && y < ROWS - 1;
+      if (dir === 'w') return !grid[y][x].walls.w;
+      if (dir === 'e') return !grid[y][x].walls.e;
+      return false;
+    }
+
+    function movePlayer(dir) {
+      if (gameState !== 'playing') return;
+
+      // Check for exit before normal movement
+      if (player.x === COLS - 1 && dir === 'e' && !grid[player.y][player.x].walls.e) {
+        winGame();
+        return;
+      }
+
+      if (!canMove(player.x, player.y, dir)) return;
+
+      const dx = dir === 'e' ? 1 : dir === 'w' ? -1 : 0;
+      const dy = dir === 's' ? 1 : dir === 'n' ? -1 : 0;
+      const nx = player.x + dx;
+      const ny = player.y + dy;
+
+      player.trail.push([player.x, player.y]);
+      player.x = nx;
+      player.y = ny;
+
+      // Spawn movement sparkles
+      spawnParticles(player.x * CELL + CELL / 2, player.y * CELL + CELL / 2, 3, 'move');
+
+      // Update checkpoint
+      updateCheckpoint();
+
+      // Check dead end
+      if (isDeadEnd()) {
+        showDeadEnd();
+      }
+
+      render();
+    }
+
+    document.addEventListener('keydown', (e) => {
+      const keyMap = {
+        ArrowUp: 'n', ArrowDown: 's', ArrowLeft: 'w', ArrowRight: 'e',
+        w: 'n', s: 's', a: 'w', d: 'e'
+      };
+      const dir = keyMap[e.key];
+      if (dir) {
+        e.preventDefault();
+        movePlayer(dir);
+      }
+    });
+
+    // === CHECKPOINT ===
+
+    function buildSolutionSet() {
+      // Map from "x,y" -> index in solutionPath for O(1) lookup
+      player.solutionMap = new Map();
+      for (let i = 0; i < solutionPath.length; i++) {
+        const key = solutionPath[i][0] + ',' + solutionPath[i][1];
+        // Only store the first occurrence (path is self-avoiding, so each cell appears once)
+        if (!player.solutionMap.has(key)) {
+          player.solutionMap.set(key, i);
+        }
+      }
+    }
+
+    function updateCheckpoint() {
+      if (!checkpointEnabled) return;
+      const key = player.x + ',' + player.y;
+      if (player.solutionMap.has(key)) {
+        const idx = player.solutionMap.get(key);
+        if (idx >= player.lastCheckpointIndex) {
+          player.lastCheckpointIndex = idx;
+        }
+      }
+    }
+
+    // === DEAD END ===
+
+    function isDeadEnd() {
+      // Spec-aligned: dead end = all immediate passable neighbors are already visited.
+      // The player cannot move to any unvisited cell directly from where they stand.
+      const visited = new Set(player.trail.map(t => t[0] + ',' + t[1]));
+      visited.add(player.x + ',' + player.y);
+
+      const directions = [
+        ['n', 0, -1], ['s', 0, 1], ['w', -1, 0], ['e', 1, 0]
+      ];
+      for (const [dir, dx, dy] of directions) {
+        if (canMove(player.x, player.y, dir)) {
+          const key = (player.x + dx) + ',' + (player.y + dy);
+          if (!visited.has(key)) return false;
+        }
+      }
+      return true;
+    }
+
+    function showDeadEnd() {
+      gameState = 'deadEnd';
+      const resumeBtn = document.getElementById('resume-btn');
+      resumeBtn.style.display = checkpointEnabled ? 'inline-block' : 'none';
+      document.getElementById('dead-end-screen').classList.remove('hidden');
+      document.getElementById('help-btn').classList.add('hidden');
+    }
+
+    function restart() {
+      gameState = 'playing';
+      player.x = solutionPath[0][0];
+      player.y = solutionPath[0][1];
+      player.trail = [];
+      player.lastCheckpointIndex = 0;
+      document.getElementById('dead-end-screen').classList.add('hidden');
+      document.getElementById('help-btn').classList.remove('hidden');
+      render();
+    }
+
+    function resumeFromCheckpoint() {
+      gameState = 'playing';
+      const cp = solutionPath[player.lastCheckpointIndex];
+      player.x = cp[0];
+      player.y = cp[1];
+
+      // Clear trail from checkpoint onward: find the LAST occurrence of the
+      // checkpoint cell in the trail (player may have passed through it multiple times)
+      const cpKey = cp[0] + ',' + cp[1];
+      let cpTrailIdx = -1;
+      for (let i = player.trail.length - 1; i >= 0; i--) {
+        if (player.trail[i][0] + ',' + player.trail[i][1] === cpKey) {
+          cpTrailIdx = i;
+          break;
+        }
+      }
+      if (cpTrailIdx >= 0) {
+        player.trail = player.trail.slice(0, cpTrailIdx + 1);
+      }
+      // If checkpoint cell not in trail (player started there), clear entire trail
+
+      spawnParticles(player.x * CELL + CELL / 2, player.y * CELL + CELL / 2, 10, 'teleport');
+
+      document.getElementById('dead-end-screen').classList.add('hidden');
+      document.getElementById('help-btn').classList.remove('hidden');
+      render();
+    }
+
+    // Wire up buttons
+    document.getElementById('restart-btn').addEventListener('click', restart);
+    document.getElementById('resume-btn').addEventListener('click', resumeFromCheckpoint);
+    document.getElementById('help-btn').addEventListener('click', () => {
+      if (gameState === 'playing') showDeadEnd();
+    });
+
+    // === PARTICLE SYSTEM ===
+
+    function spawnParticles(cx, cy, count, type) {
+      for (let i = 0; i < count; i++) {
+        const angle = Math.random() * Math.PI * 2;
+        const speed = type === 'win' ? (1 + Math.random() * 3) : (0.5 + Math.random() * 1.5);
+        particles.push({
+          x: cx,
+          y: cy,
+          vx: Math.cos(angle) * speed,
+          vy: Math.sin(angle) * speed,
+          life: 1.0,
+          color: COLORS.sparkle[Math.floor(Math.random() * COLORS.sparkle.length)],
+          size: type === 'win' ? (1 + Math.random() * 2) : (0.5 + Math.random())
+        });
+      }
+    }
+
+    function updateParticles(dt) {
+      for (let i = particles.length - 1; i >= 0; i--) {
+        const p = particles[i];
+        p.x += p.vx * dt;
+        p.y += p.vy * dt;
+        p.life -= dt * 1.5;
+        p.vx *= 0.98;
+        p.vy *= 0.98;
+        if (p.life <= 0) particles.splice(i, 1);
+      }
+    }
+
+    // === GAME LOOP ===
+
+    let lastTime = 0;
+
+    function gameLoop(timestamp) {
+      const dt = Math.min((timestamp - lastTime) / 1000, 0.05); // cap delta
+      lastTime = timestamp;
+
+      if (gameState === 'playing' || gameState === 'win') {
+        updateParticles(dt);
+        render();
+      }
+
+      requestAnimationFrame(gameLoop);
+    }
+
+    // === GAME FLOW ===
+
+    function startGame() {
+      trailEnabled = document.getElementById('trail-toggle').checked;
+      checkpointEnabled = document.getElementById('checkpoint-toggle').checked;
+
+      generateMaze();
+
+      player.x = solutionPath[0][0];
+      player.y = solutionPath[0][1];
+      player.trail = [];
+      player.lastCheckpointIndex = 0;
+      buildSolutionSet();
+      particles = [];
+
+      gameState = 'playing';
+      document.getElementById('start-screen').classList.add('hidden');
+      document.getElementById('help-btn').classList.remove('hidden');
+
+      render();
+    }
+
+    function winGame() {
+      gameState = 'win';
+      // Celebration sparkle burst
+      for (let i = 0; i < 5; i++) {
+        setTimeout(() => {
+          spawnParticles(
+            Math.random() * canvas.width,
+            Math.random() * canvas.height,
+            15, 'win'
+          );
+        }, i * 200);
+      }
+      setTimeout(() => {
+        document.getElementById('win-screen').classList.remove('hidden');
+      }, 1200);
+      document.getElementById('help-btn').classList.add('hidden');
+    }
+
+    function playAgain() {
+      document.getElementById('win-screen').classList.add('hidden');
+      document.getElementById('start-screen').classList.remove('hidden');
+    }
+
+    // Wire up buttons
+    document.getElementById('start-btn').addEventListener('click', startGame);
+    document.getElementById('play-again-btn').addEventListener('click', playAgain);
+
+    // Start the game loop
+    requestAnimationFrame(gameLoop);
   </script>
 </body>
 </html>
