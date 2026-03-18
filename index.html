@@ -398,16 +398,7 @@
       }
       ctx.stroke();
 
-      // Draw entry and exit openings with a highlight color on whichever edge they sit
-      if (solutionPath.length > 0) {
-        ctx.fillStyle = COLORS.wallHighlight;
-        for (const portal of [entrance, exitCell]) {
-          if (portal.wall === 'n') ctx.fillRect(portal.x * CELL + 1, 0, CELL - 2, 2);
-          if (portal.wall === 's') ctx.fillRect(portal.x * CELL + 1, ROWS * CELL - 2, CELL - 2, 2);
-          if (portal.wall === 'w') ctx.fillRect(0, portal.y * CELL + 1, 2, CELL - 2);
-          if (portal.wall === 'e') ctx.fillRect(COLS * CELL - 2, portal.y * CELL + 1, 2, CELL - 2);
-        }
-      }
+      drawPortals();
     }
 
     function drawLamplight() {
@@ -440,16 +431,28 @@
         }
       }
 
-      // Entry and exit markers stay visible for orientation
-      if (solutionPath.length > 0) {
-        ctx.fillStyle = COLORS.wallHighlight;
-        for (const portal of [entrance, exitCell]) {
-          if (portal.wall === 'n') ctx.fillRect(portal.x * CELL + 1, 0, CELL - 2, 2);
-          if (portal.wall === 's') ctx.fillRect(portal.x * CELL + 1, ROWS * CELL - 2, CELL - 2, 2);
-          if (portal.wall === 'w') ctx.fillRect(0, portal.y * CELL + 1, 2, CELL - 2);
-          if (portal.wall === 'e') ctx.fillRect(COLS * CELL - 2, portal.y * CELL + 1, 2, CELL - 2);
-        }
-      }
+      drawPortals();
+    }
+
+    function drawPortals() {
+      if (solutionPath.length === 0) return;
+
+      // Entrance: steady highlight
+      ctx.fillStyle = COLORS.wallHighlight;
+      drawPortalMark(entrance);
+
+      // Exit: gentle undulating glow that beckons the player (alpha 0.3–1.0)
+      const t = performance.now() / 1000;
+      const exitAlpha = 0.3 + 0.7 * (0.5 + 0.5 * Math.sin(t * 2.0));
+      ctx.fillStyle = 'rgba(126, 200, 117, ' + exitAlpha + ')';
+      drawPortalMark(exitCell);
+    }
+
+    function drawPortalMark(portal) {
+      if (portal.wall === 'n') ctx.fillRect(portal.x * CELL + 1, 0, CELL - 2, 2);
+      if (portal.wall === 's') ctx.fillRect(portal.x * CELL + 1, ROWS * CELL - 2, CELL - 2, 2);
+      if (portal.wall === 'w') ctx.fillRect(0, portal.y * CELL + 1, 2, CELL - 2);
+      if (portal.wall === 'e') ctx.fillRect(COLS * CELL - 2, portal.y * CELL + 1, 2, CELL - 2);
     }
 
     function drawCellWalls(x, y, alpha) {
