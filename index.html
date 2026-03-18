@@ -105,12 +105,6 @@
       <button id="start-btn">START</button>
     </div>
 
-    <!-- Dead End Modal -->
-    <div id="dead-end-screen" class="overlay hidden">
-      <h1>STUCK!</h1>
-      <button id="restart-btn">Restart</button>
-      <button id="resume-btn">Resume from Checkpoint</button>
-    </div>
 
     <!-- Win Screen -->
     <div id="win-screen" class="overlay hidden">
@@ -142,7 +136,7 @@
     const canvas = document.getElementById('maze');
     const ctx = canvas.getContext('2d');
 
-    let gameState = 'start'; // start | playing | deadEnd | win
+    let gameState = 'start'; // start | playing | win
     let grid = [];
     let solutionPath = [];
     let entrance = { x: 0, y: 0, wall: 'w' };
@@ -440,9 +434,9 @@
       // Update checkpoint
       updateCheckpoint();
 
-      // Check dead end
-      if (isDeadEnd()) {
-        showDeadEnd();
+      // Auto-resume from checkpoint at structural dead ends (3 walls)
+      if (isStructuralDeadEnd()) {
+        resumeFromCheckpoint();
       }
 
       render();
@@ -487,9 +481,12 @@
 
     // === DEAD END ===
 
-    function isDeadEnd() {
-      // Spec-aligned: dead end = all immediate passable neighbors are already visited.
-      // The player cannot move to any unvisited cell directly from where they stand.
+    function isStructuralDeadEnd() {
+      // Structural dead end: cell has 3 walls (only 1 passage out) and
+      // the player has already visited the only reachable neighbor.
+      const cell = grid[player.y][player.x];
+      const wallCount = [cell.walls.n, cell.walls.s, cell.walls.e, cell.walls.w].filter(Boolean).length;
+      if (wallCount < 3) return false;
       const directions = [
         ['n', 0, -1], ['s', 0, 1], ['w', -1, 0], ['e', 1, 0]
       ];
@@ -502,33 +499,8 @@
       return true;
     }
 
-    function showDeadEnd() {
-      gameState = 'deadEnd';
-      const resumeBtn = document.getElementById('resume-btn');
-      // Only offer checkpoint resume at structural dead ends (3 walls = 1 way out).
-      // If the player is stuck because all neighbors are visited but they have
-      // multiple passages, they must restart — no shortcut out of a loop.
-      const cell = grid[player.y][player.x];
-      const wallCount = [cell.walls.n, cell.walls.s, cell.walls.e, cell.walls.w].filter(Boolean).length;
-      resumeBtn.style.display = (checkpointEnabled && wallCount >= 3) ? 'inline-block' : 'none';
-      document.getElementById('dead-end-screen').classList.remove('hidden');
-      document.getElementById('help-btn').classList.add('hidden');
-    }
-
-    function restart() {
-      gameState = 'playing';
-      player.x = solutionPath[0][0];
-      player.y = solutionPath[0][1];
-      player.trail = [];
-      player.visitedSet = new Set([player.x + ',' + player.y]);
-      player.lastCheckpointIndex = 0;
-      document.getElementById('dead-end-screen').classList.add('hidden');
-      document.getElementById('help-btn').classList.remove('hidden');
-      render();
-    }
-
     function resumeFromCheckpoint() {
-      gameState = 'playing';
+      if (!checkpointEnabled) return;
       const cp = solutionPath[player.lastCheckpointIndex];
       player.x = cp[0];
       player.y = cp[1];
@@ -553,17 +525,12 @@
       player.visitedSet.add(player.x + ',' + player.y);
 
       spawnParticles(player.x * CELL + CELL / 2, player.y * CELL + CELL / 2, 10, 'teleport');
-
-      document.getElementById('dead-end-screen').classList.add('hidden');
-      document.getElementById('help-btn').classList.remove('hidden');
       render();
     }
 
     // Wire up buttons
-    document.getElementById('restart-btn').addEventListener('click', restart);
-    document.getElementById('resume-btn').addEventListener('click', resumeFromCheckpoint);
     document.getElementById('help-btn').addEventListener('click', () => {
-      if (gameState === 'playing') showDeadEnd();
+      if (gameState === 'playing') resumeFromCheckpoint();
     });
 
     // === PARTICLE SYSTEM ===
