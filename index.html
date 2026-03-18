@@ -15,8 +15,34 @@
       font-family: monospace;
       color: #cccccc;
     }
+    #wrapper {
+      display: flex;
+      align-items: flex-start;
+      gap: 1rem;
+    }
     #game-container {
       position: relative;
+    }
+    #scoreboard {
+      width: 80px;
+      text-align: center;
+      padding-top: 0.5rem;
+    }
+    #scoreboard h3 {
+      color: #ff6b9d;
+      font-size: 0.75rem;
+      margin-bottom: 0.25rem;
+      letter-spacing: 0.1em;
+    }
+    #reset-total {
+      font-size: 2rem;
+      color: #ffdd57;
+      font-weight: bold;
+    }
+    #scoreboard .hint {
+      font-size: 0.6rem;
+      color: #666;
+      margin-top: 0.25rem;
     }
     canvas {
       display: block;
@@ -88,6 +114,7 @@
   </style>
 </head>
 <body>
+  <div id="wrapper">
   <div id="game-container">
     <canvas id="maze" width="200" height="200"></canvas>
 
@@ -115,6 +142,12 @@
     <!-- Help Button (during gameplay) -->
     <button id="help-btn" class="hidden">HELP</button>
   </div>
+  <div id="scoreboard">
+    <h3>RESETS</h3>
+    <div id="reset-total">0</div>
+    <div class="hint">lower is better</div>
+  </div>
+  </div><!-- /wrapper -->
 
   <script>
     // === CONSTANTS & STATE ===
@@ -143,6 +176,7 @@
     let exitCell = { x: 0, y: 0, wall: 'e' };
     let player = { x: 0, y: 0, lastCheckpointIndex: 0, trail: [], visitedSet: new Set() };
     let particles = [];
+    let checkpointResets = new Map(); // "x,y" -> count of resets at that cell
     let trailEnabled = true;
     let checkpointEnabled = true;
 
@@ -329,6 +363,7 @@
 
       drawMaze();
       drawTrail();
+      drawResetCounts();
       drawPlayer();
       drawParticles();
     }
@@ -381,6 +416,22 @@
       ctx.fillStyle = COLORS.trail;
       for (const [tx, ty] of player.trail) {
         ctx.fillRect(tx * CELL + 1, ty * CELL + 1, CELL - 2, CELL - 2);
+      }
+    }
+
+    function drawResetCounts() {
+      if (gameState !== 'playing' || checkpointResets.size === 0) return;
+      // Draw reset count numbers centered in each checkpoint cell
+      ctx.font = '6px monospace';
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      for (const [key, count] of checkpointResets) {
+        const [cx, cy] = key.split(',').map(Number);
+        // Background pip so the number is readable over the trail
+        ctx.fillStyle = 'rgba(255, 107, 157, 0.6)';
+        ctx.fillRect(cx * CELL + 1, cy * CELL + 1, CELL - 2, CELL - 2);
+        ctx.fillStyle = '#ffffff';
+        ctx.fillText(count, cx * CELL + CELL / 2, cy * CELL + CELL / 2 + 1);
       }
     }
 
@@ -505,6 +556,11 @@
       player.x = cp[0];
       player.y = cp[1];
 
+      // Track how many times we've reset at this checkpoint
+      const resetKey = cp[0] + ',' + cp[1];
+      checkpointResets.set(resetKey, (checkpointResets.get(resetKey) || 0) + 1);
+      updateScoreboard();
+
       // Clear trail from checkpoint onward: find the LAST occurrence of the
       // checkpoint cell in the trail (player may have passed through it multiple times)
       const cpKey = cp[0] + ',' + cp[1];
@@ -526,6 +582,12 @@
 
       spawnParticles(player.x * CELL + CELL / 2, player.y * CELL + CELL / 2, 10, 'teleport');
       render();
+    }
+
+    function updateScoreboard() {
+      let total = 0;
+      for (const count of checkpointResets.values()) total += count;
+      document.getElementById('reset-total').textContent = total;
     }
 
     // Wire up buttons
@@ -594,6 +656,8 @@
       player.lastCheckpointIndex = 0;
       buildSolutionSet();
       particles = [];
+      checkpointResets = new Map();
+      updateScoreboard();
 
       gameState = 'playing';
       document.getElementById('start-screen').classList.add('hidden');
