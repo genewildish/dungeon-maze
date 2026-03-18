@@ -225,7 +225,35 @@
     }
 
     function fillMaze() {
-      // Phase 2: recursive backtracker from each unvisited cell
+      // Phase 2: carve corridors branching from the solution path.
+      // By starting DFS from solution path cells (shuffled for variety),
+      // every corridor connects back to the solution — creating reachable
+      // alternate routes of naturally varied length. DFS goes deep before
+      // backtracking, so some branches become long, convincing detours.
+
+      // Collect solution path cells that have unvisited neighbors
+      const frontier = [];
+      for (const [sx, sy] of solutionPath) {
+        if (getNeighbors(sx, sy, true).length > 0) {
+          frontier.push([sx, sy]);
+        }
+      }
+
+      // Shuffle so branch lengths vary naturally — the first frontier cells
+      // processed get the most unvisited territory to carve through
+      for (let i = frontier.length - 1; i > 0; i--) {
+        const j = Math.floor(Math.random() * (i + 1));
+        [frontier[i], frontier[j]] = [frontier[j], frontier[i]];
+      }
+
+      // Carve from each frontier cell into unvisited territory
+      for (const [fx, fy] of frontier) {
+        if (getNeighbors(fx, fy, true).length > 0) {
+          carve(fx, fy);
+        }
+      }
+
+      // Catch any remaining unvisited cells not reachable from the frontier
       for (let y = 0; y < ROWS; y++) {
         for (let x = 0; x < COLS; x++) {
           if (!grid[y][x].visited) {
