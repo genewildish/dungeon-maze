@@ -173,6 +173,17 @@
     const canvas = document.getElementById('maze');
     const ctx = canvas.getContext('2d');
 
+    // Detect ClockworkPi (or any embedded target) via ?platform=clockworkpi URL param.
+    // When running on-device, scale the canvas to fill the viewport so the game
+    // uses the full screen rather than sitting in the center of a desktop browser.
+    const isClockworkPi = new URLSearchParams(window.location.search).get('platform') === 'clockworkpi';
+    if (isClockworkPi) {
+      // Leave 120px for the scoreboard sidebar + gap; 20px vertical breathing room.
+      const size = Math.min(window.innerHeight - 20, window.innerWidth - 120);
+      canvas.style.width  = size + 'px';
+      canvas.style.height = size + 'px';
+    }
+
     let gameState = 'start'; // start | playing | win
     let grid = [];
     let solutionPath = [];
