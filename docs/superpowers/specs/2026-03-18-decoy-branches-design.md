@@ -25,37 +25,37 @@ No changes to Phase 1 or Phase 2. Decoy branches mark their cells as visited, so
 The solution path is an ordered array of ~40-80 cells. To place 3 well-distributed branch points:
 
 - Divide the solution path into 4 equal segments, creating division points at ~25%, ~50%, and ~75% of the path length.
-- Add jitter: pick a random cell within ±3 indices of each division point.
+- Add jitter: pick a random cell within ±3 indices of each division point. Clamp the result to `[2, solutionPath.length - 3]` to avoid placing branches at the very start or end of the solution.
 - Each branch point must have at least one unvisited neighbor. If not, slide along the solution path until one is found.
 
 This prevents branches from clustering together and ensures they span the full length of the solution.
 
 ### Target Edge Assignment
 
-Each decoy targets a different edge of the grid. For variety and maximum length:
+Each decoy targets a different edge of the grid. The right (east) edge is excluded since the solution path already exits there — a decoy running parallel to the solution near the exit would be confusing rather than fun. That leaves 3 edges (north, south, west) for 3 branches — one each, no conflicts.
 
-- For each branch point, calculate the farthest edge based on the branch point's grid position (e.g., a branch point near the top targets the south edge).
-- If two branch points would target the same edge, reassign the closer one to its second-farthest edge.
-- The target cell is placed 1-2 cells from the target edge at a random position along that edge (e.g., targeting the north edge means `y = 1`, random `x`).
+Assignment uses a greedy loop: process branch points in solution-path order. Each picks the farthest available edge from its grid position. Since there are exactly 3 edges for 3 branches, each gets a unique target.
 
-This ensures the 3 branches fan out in different directions and each has room to grow long.
+The target cell is placed 1-2 cells from the target edge at a random position along that edge (e.g., targeting the north edge means `y = 1`, random `x`).
 
 ### Decoy Walk Algorithm
 
 Each decoy uses the same biased random walk pattern as the solution path:
 
 1. **Start** from the branch point on the solution path. First step goes to an unvisited neighbor.
-2. **Directional bias** toward the target edge: 40% weight for the target direction, 20% each for the other three. Uses the same weighted-pool approach as `generateSolutionPath()`.
-3. **Self-avoiding** — only walks through unvisited cells. Backtracks if cornered (same backtracking logic as the solution path).
-4. **Stop conditions** (whichever comes first):
+2. **Wall removal** — each step removes the wall between the current cell and the next, exactly like the solution path walk. This is what creates passable corridors.
+3. **Directional bias** toward the target edge: 40% weight for the target direction, 20% each for the other three. Uses the same weighted-pool approach as `generateSolutionPath()`.
+4. **Self-avoiding** — only walks through unvisited cells. Backtracks if cornered. Backtracking stops at the branch point — if the branch point has no remaining unvisited neighbors, the decoy terminates with whatever it carved.
+5. **Target length** — before each walk begins, pick a random target length uniformly from `[0.5 * solutionPath.length, 0.75 * solutionPath.length]`.
+6. **Stop conditions** (whichever comes first):
    - Walk reaches within 1-2 cells of the target edge (success).
-   - Walk reaches 50-75% of the solution path length.
-   - Walk exhausts all backtracking options (keep whatever was carved).
-5. **Mark** all carved cells as visited so Phase 2 fills around them.
+   - Walk reaches the target length.
+   - Walk exhausts all backtracking options back to the branch point (keep whatever was carved).
+7. **Mark** all carved cells as visited so Phase 2 fills around them.
 
 ### Collision Handling & Edge Cases
 
-- **Decoy-to-decoy collision:** Each decoy marks cells visited as it goes. Later decoys naturally avoid earlier ones. On a 25x25 grid (625 cells) with ~60 solution cells and ~30-45 cells per decoy, there is sufficient room.
+- **Decoy-to-decoy collision:** Each decoy marks cells visited as it goes. Later decoys naturally avoid earlier ones. On a 25x25 grid (625 cells), worst case is ~80 solution cells + 3 decoys at ~60 cells each = ~260 cells (42% of grid), leaving 365 cells for Phase 2. Typical case is ~60 solution cells + ~30-45 per decoy = ~150-195 cells, leaving ample room.
 - **Short decoy fallback:** If a decoy gets stuck early (under 10 cells), it remains as a shorter branch. No retry logic — Phase 2 may extend it organically.
 - **No visual distinction:** Decoy corridors are indistinguishable from any other corridor after Phase 2 fills the grid.
 - **Checkpoint system unaffected:** Checkpoints only track progress along `solutionPath`. Decoy branches are regular corridors from gameplay's perspective.
