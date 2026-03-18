@@ -129,6 +129,10 @@
         <input type="checkbox" id="checkpoint-toggle" checked>
         <label for="checkpoint-toggle">Checkpoints</label>
       </div>
+      <div class="toggle-group">
+        <input type="checkbox" id="lamplight-toggle">
+        <label for="lamplight-toggle">Lamplight</label>
+      </div>
       <button id="start-btn">START</button>
     </div>
 
@@ -179,6 +183,7 @@
     let checkpointResets = new Map(); // "x,y" -> count of resets at that cell
     let trailEnabled = true;
     let checkpointEnabled = true;
+    let lamplightEnabled = false;
 
     // === GRID & MAZE GENERATION ===
 
@@ -361,7 +366,11 @@
       ctx.fillStyle = COLORS.corridor;
       ctx.fillRect(0, 0, canvas.width, canvas.height);
 
-      drawMaze();
+      if (lamplightEnabled) {
+        drawLamplight();
+      } else {
+        drawMaze();
+      }
       drawTrail();
       drawResetCounts();
       drawPlayer();
@@ -397,6 +406,51 @@
           if (portal.wall === 'e') ctx.fillRect(COLS * CELL - 2, portal.y * CELL + 1, 2, CELL - 2);
         }
       }
+    }
+
+    function drawLamplight() {
+      if (gameState !== 'playing') return;
+
+      // How many trail cells behind the player still show wall reflections
+      const FADE_LENGTH = 20;
+
+      // Draw fading walls around recent trail cells — amber glow like lamplight.
+      // Most recent cells are brightest; older ones fade to invisible.
+      const trailLen = player.trail.length;
+      const start = Math.max(0, trailLen - FADE_LENGTH);
+      for (let i = start; i < trailLen; i++) {
+        const stepsAgo = trailLen - i;
+        const alpha = 1.0 - (stepsAgo / FADE_LENGTH);
+        drawCellWalls(player.trail[i][0], player.trail[i][1], alpha);
+      }
+
+      // Current cell always at full brightness
+      drawCellWalls(player.x, player.y, 1.0);
+
+      // Entry and exit markers stay visible for orientation
+      if (solutionPath.length > 0) {
+        ctx.fillStyle = COLORS.wallHighlight;
+        for (const portal of [entrance, exitCell]) {
+          if (portal.wall === 'n') ctx.fillRect(portal.x * CELL + 1, 0, CELL - 2, 2);
+          if (portal.wall === 's') ctx.fillRect(portal.x * CELL + 1, ROWS * CELL - 2, CELL - 2, 2);
+          if (portal.wall === 'w') ctx.fillRect(0, portal.y * CELL + 1, 2, CELL - 2);
+          if (portal.wall === 'e') ctx.fillRect(COLS * CELL - 2, portal.y * CELL + 1, 2, CELL - 2);
+        }
+      }
+    }
+
+    function drawCellWalls(x, y, alpha) {
+      const px = x * CELL;
+      const py = y * CELL;
+      const cell = grid[y][x];
+      ctx.strokeStyle = 'rgba(255, 170, 68, ' + alpha + ')';
+      ctx.lineWidth = 1;
+      ctx.beginPath();
+      if (cell.walls.n) { ctx.moveTo(px, py + 0.5); ctx.lineTo(px + CELL, py + 0.5); }
+      if (cell.walls.s) { ctx.moveTo(px, py + CELL - 0.5); ctx.lineTo(px + CELL, py + CELL - 0.5); }
+      if (cell.walls.w) { ctx.moveTo(px + 0.5, py); ctx.lineTo(px + 0.5, py + CELL); }
+      if (cell.walls.e) { ctx.moveTo(px + CELL - 0.5, py); ctx.lineTo(px + CELL - 0.5, py + CELL); }
+      ctx.stroke();
     }
 
     function drawPlayer() {
@@ -646,6 +700,7 @@
     function startGame() {
       trailEnabled = document.getElementById('trail-toggle').checked;
       checkpointEnabled = document.getElementById('checkpoint-toggle').checked;
+      lamplightEnabled = document.getElementById('lamplight-toggle').checked;
 
       generateMaze();
 
