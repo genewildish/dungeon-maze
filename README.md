@@ -16,6 +16,27 @@ A meditative browser-based maze explorer. Navigate procedurally-generated perfec
 3. Press START and use arrow keys to move
 4. Find the exit (glowing and undulating at the edge)
 
+---
+
+## ClockworkPi / Handheld Devices
+
+The game runs on **ClockworkPi uConsole** and similar handheld Linux devices with Chromium.
+
+### Launch on ClockworkPi uConsole
+
+- **Desktop:** Double-click the **Maze** shortcut on the desktop
+- **Terminal:** Run `~/games/maze/launch.sh`
+- The game launches in fullscreen kiosk mode and scales to fill the 1280×720 screen
+
+### Controls on uConsole
+
+- **D-pad arrows** — move one cell at a time
+- **D-pad center** (or **Enter** key) — start game / play again
+- **Escape** key — exit to desktop (the game puns: *"press escape to escape"*)
+- **Physical keyboard** — arrow keys work alongside D-pad
+
+---
+
 ## Gameplay
 
 ### Core Loop
