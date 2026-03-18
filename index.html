@@ -1,0 +1,329 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Maze</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body {
+      background: #0f0f23;
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      min-height: 100vh;
+      font-family: monospace;
+      color: #cccccc;
+    }
+    #game-container {
+      position: relative;
+    }
+    canvas {
+      display: block;
+      image-rendering: pixelated;
+      image-rendering: crisp-edges;
+      width: 600px;
+      height: 600px;
+    }
+    .overlay {
+      position: absolute;
+      top: 0; left: 0; right: 0; bottom: 0;
+      display: flex;
+      flex-direction: column;
+      justify-content: center;
+      align-items: center;
+      background: rgba(15, 15, 35, 0.9);
+    }
+    .overlay.hidden { display: none; }
+    .overlay h1 {
+      font-size: 2rem;
+      color: #ffdd57;
+      margin-bottom: 1rem;
+      text-shadow: 2px 2px #000;
+    }
+    .overlay button {
+      font-family: monospace;
+      font-size: 1rem;
+      padding: 0.5rem 1.5rem;
+      margin: 0.25rem;
+      background: #2a2a4a;
+      color: #ffdd57;
+      border: 2px solid #ffdd57;
+      cursor: pointer;
+    }
+    .overlay button:hover {
+      background: #ffdd57;
+      color: #0f0f23;
+    }
+    .toggle-group {
+      margin: 0.5rem 0;
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+    }
+    .toggle-group label {
+      cursor: pointer;
+      font-size: 0.9rem;
+    }
+    .toggle-group input[type="checkbox"] {
+      accent-color: #ffdd57;
+      width: 18px;
+      height: 18px;
+      cursor: pointer;
+    }
+    #help-btn {
+      position: absolute;
+      bottom: 8px;
+      right: 8px;
+      font-family: monospace;
+      font-size: 0.75rem;
+      padding: 0.25rem 0.5rem;
+      background: #2a2a4a;
+      color: #888;
+      border: 1px solid #444;
+      cursor: pointer;
+    }
+    #help-btn:hover { color: #ffdd57; border-color: #ffdd57; }
+    #help-btn.hidden { display: none; }
+  </style>
+</head>
+<body>
+  <div id="game-container">
+    <canvas id="maze" width="200" height="200"></canvas>
+
+    <!-- Start Screen -->
+    <div id="start-screen" class="overlay">
+      <h1>MAZE</h1>
+      <div class="toggle-group">
+        <input type="checkbox" id="trail-toggle" checked>
+        <label for="trail-toggle">Show Trail</label>
+      </div>
+      <div class="toggle-group">
+        <input type="checkbox" id="checkpoint-toggle" checked>
+        <label for="checkpoint-toggle">Checkpoints</label>
+      </div>
+      <button id="start-btn">START</button>
+    </div>
+
+    <!-- Dead End Modal -->
+    <div id="dead-end-screen" class="overlay hidden">
+      <h1>STUCK!</h1>
+      <button id="restart-btn">Restart</button>
+      <button id="resume-btn">Resume from Checkpoint</button>
+    </div>
+
+    <!-- Win Screen -->
+    <div id="win-screen" class="overlay hidden">
+      <h1>YOU WIN!</h1>
+      <button id="play-again-btn">Play Again</button>
+    </div>
+
+    <!-- Help Button (during gameplay) -->
+    <button id="help-btn" class="hidden">HELP</button>
+  </div>
+
+  <script>
+    // === CONSTANTS & STATE ===
+    const COLS = 25;
+    const ROWS = 25;
+    const CELL = 8; // pixels per cell
+
+    const COLORS = {
+      bg: '#0f0f23',
+      wall: '#4a6741',
+      wallHighlight: '#7ec875',
+      corridor: '#1a1a2e',
+      player: '#ffdd57',
+      trail: '#2a4a3a',
+      checkpoint: '#ff6b9d',
+      sparkle: ['#ffdd57', '#ff6b9d', '#7ec875', '#57c7ff', '#ffffff']
+    };
+
+    const canvas = document.getElementById('maze');
+    const ctx = canvas.getContext('2d');
+
+    let gameState = 'start'; // start | playing | deadEnd | win
+    let grid = [];
+    let solutionPath = [];
+    let player = { x: 0, y: 0, lastCheckpointIndex: 0, trail: [] };
+    let particles = [];
+    let trailEnabled = true;
+    let checkpointEnabled = true;
+
+    // === GRID & MAZE GENERATION ===
+
+    function createGrid() {
+      grid = [];
+      for (let y = 0; y < ROWS; y++) {
+        grid[y] = [];
+        for (let x = 0; x < COLS; x++) {
+          grid[y][x] = {
+            walls: { n: true, s: true, e: true, w: true },
+            visited: false
+          };
+        }
+      }
+    }
+
+    function removeWall(x1, y1, x2, y2) {
+      if (x2 === x1 + 1) { grid[y1][x1].walls.e = false; grid[y2][x2].walls.w = false; }
+      if (x2 === x1 - 1) { grid[y1][x1].walls.w = false; grid[y2][x2].walls.e = false; }
+      if (y2 === y1 + 1) { grid[y1][x1].walls.s = false; grid[y2][x2].walls.n = false; }
+      if (y2 === y1 - 1) { grid[y1][x1].walls.n = false; grid[y2][x2].walls.s = false; }
+    }
+
+    function getNeighbors(x, y, onlyUnvisited) {
+      const neighbors = [];
+      if (y > 0 && (!onlyUnvisited || !grid[y - 1][x].visited)) neighbors.push([x, y - 1, 'n']);
+      if (y < ROWS - 1 && (!onlyUnvisited || !grid[y + 1][x].visited)) neighbors.push([x, y + 1, 's']);
+      if (x > 0 && (!onlyUnvisited || !grid[y][x - 1].visited)) neighbors.push([x - 1, y, 'w']);
+      if (x < COLS - 1 && (!onlyUnvisited || !grid[y][x + 1].visited)) neighbors.push([x + 1, y, 'e']);
+      return neighbors;
+    }
+
+    function generateSolutionPath() {
+      solutionPath = [];
+      const startY = Math.floor(Math.random() * ROWS);
+      let x = 0, y = startY;
+
+      grid[y][x].visited = true;
+      solutionPath.push([x, y]);
+
+      // Open entry wall
+      grid[y][x].walls.w = false;
+
+      while (x < COLS - 1) {
+        const neighbors = getNeighbors(x, y, true); // only unvisited
+        if (neighbors.length === 0) {
+          // Backtrack along path to find cell with unvisited neighbors
+          solutionPath.pop();
+          if (solutionPath.length === 0) break; // shouldn't happen on 25x25
+          const prev = solutionPath[solutionPath.length - 1];
+          x = prev[0];
+          y = prev[1];
+          continue;
+        }
+
+        // Weighted direction selection: E=40%, N=20%, S=20%, W=20%
+        const weighted = [];
+        for (const [nx, ny, dir] of neighbors) {
+          const weight = dir === 'e' ? 40 : 20;
+          for (let i = 0; i < weight; i++) weighted.push([nx, ny]);
+        }
+        const [nx, ny] = weighted[Math.floor(Math.random() * weighted.length)];
+
+        removeWall(x, y, nx, ny);
+        grid[ny][nx].visited = true;
+        solutionPath.push([nx, ny]);
+        x = nx;
+        y = ny;
+      }
+
+      // Open exit wall
+      const lastCell = solutionPath[solutionPath.length - 1];
+      grid[lastCell[1]][lastCell[0]].walls.e = false;
+    }
+
+    function fillMaze() {
+      // Phase 2: recursive backtracker from each unvisited cell
+      for (let y = 0; y < ROWS; y++) {
+        for (let x = 0; x < COLS; x++) {
+          if (!grid[y][x].visited) {
+            carve(x, y);
+          }
+        }
+      }
+    }
+
+    function carve(startX, startY) {
+      const stack = [[startX, startY]];
+      grid[startY][startX].visited = true;
+
+      while (stack.length > 0) {
+        const [cx, cy] = stack[stack.length - 1];
+        const neighbors = getNeighbors(cx, cy, true);
+
+        if (neighbors.length === 0) {
+          stack.pop();
+          continue;
+        }
+
+        const [nx, ny] = neighbors[Math.floor(Math.random() * neighbors.length)];
+        removeWall(cx, cy, nx, ny);
+        grid[ny][nx].visited = true;
+        stack.push([nx, ny]);
+      }
+    }
+
+    function generateMaze() {
+      createGrid();
+      generateSolutionPath();
+      fillMaze();
+    }
+
+    // === RENDERING ===
+
+    function render() {
+      ctx.fillStyle = COLORS.corridor;
+      ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+      drawMaze();
+      drawTrail();
+      drawPlayer();
+      drawParticles();
+    }
+
+    function drawMaze() {
+      ctx.strokeStyle = COLORS.wall;
+      ctx.lineWidth = 1;
+
+      for (let y = 0; y < ROWS; y++) {
+        for (let x = 0; x < COLS; x++) {
+          const px = x * CELL;
+          const py = y * CELL;
+          const cell = grid[y][x];
+
+          ctx.beginPath();
+          if (cell.walls.n) { ctx.moveTo(px, py + 0.5); ctx.lineTo(px + CELL, py + 0.5); }
+          if (cell.walls.s) { ctx.moveTo(px, py + CELL - 0.5); ctx.lineTo(px + CELL, py + CELL - 0.5); }
+          if (cell.walls.w) { ctx.moveTo(px + 0.5, py); ctx.lineTo(px + 0.5, py + CELL); }
+          if (cell.walls.e) { ctx.moveTo(px + CELL - 0.5, py); ctx.lineTo(px + CELL - 0.5, py + CELL); }
+          ctx.stroke();
+        }
+      }
+
+      // Draw entry and exit openings with a highlight color
+      ctx.fillStyle = COLORS.wallHighlight;
+      const entryY = solutionPath[0][1];
+      ctx.fillRect(0, entryY * CELL + 1, 2, CELL - 2);
+      const exitY = solutionPath[solutionPath.length - 1][1];
+      ctx.fillRect(COLS * CELL - 2, exitY * CELL + 1, 2, CELL - 2);
+    }
+
+    function drawPlayer() {
+      if (gameState !== 'playing') return;
+      const px = player.x * CELL + 2;
+      const py = player.y * CELL + 2;
+      ctx.fillStyle = COLORS.player;
+      ctx.fillRect(px, py, CELL - 4, CELL - 4);
+    }
+
+    function drawTrail() {
+      if (!trailEnabled || gameState !== 'playing') return;
+      ctx.fillStyle = COLORS.trail;
+      for (const [tx, ty] of player.trail) {
+        ctx.fillRect(tx * CELL + 1, ty * CELL + 1, CELL - 2, CELL - 2);
+      }
+    }
+
+    function drawParticles() {
+      for (const p of particles) {
+        ctx.globalAlpha = p.life;
+        ctx.fillStyle = p.color;
+        ctx.fillRect(Math.floor(p.x), Math.floor(p.y), Math.ceil(p.size), Math.ceil(p.size));
+      }
+      ctx.globalAlpha = 1;
+    }
+  </script>
+</body>
+</html>
