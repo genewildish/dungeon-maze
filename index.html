@@ -306,6 +306,10 @@
       if (gameState !== 'playing') return;
       const px = player.x * CELL + 2;
       const py = player.y * CELL + 2;
+      // Glow effect
+      ctx.fillStyle = 'rgba(255, 221, 87, 0.3)';
+      ctx.fillRect(px - 1, py - 1, CELL - 2, CELL - 2);
+      // Player
       ctx.fillStyle = COLORS.player;
       ctx.fillRect(px, py, CELL - 4, CELL - 4);
     }
