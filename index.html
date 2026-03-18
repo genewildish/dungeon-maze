@@ -185,6 +185,8 @@
     let checkpointEnabled = true;
     let lamplightEnabled = false;
     let monsters = [];
+    let fairies = [];
+    let fairyRevealTimer = 0; // seconds remaining of full-map illumination
 
     // === GRID & MAZE GENERATION ===
 
@@ -391,6 +393,24 @@
 
       if (lamplightEnabled) {
         drawLamplight();
+        // Fairy reveal: briefly show all walls, fading out
+        if (fairyRevealTimer > 0) {
+          ctx.strokeStyle = 'rgba(100, 255, 100, ' + Math.min(1, fairyRevealTimer) + ')';
+          ctx.lineWidth = 1;
+          ctx.beginPath();
+          for (let y = 0; y < ROWS; y++) {
+            for (let x = 0; x < COLS; x++) {
+              const px = x * CELL;
+              const py = y * CELL;
+              const cell = grid[y][x];
+              if (cell.walls.n) { ctx.moveTo(px, py + 0.5); ctx.lineTo(px + CELL, py + 0.5); }
+              if (cell.walls.s) { ctx.moveTo(px, py + CELL - 0.5); ctx.lineTo(px + CELL, py + CELL - 0.5); }
+              if (cell.walls.w) { ctx.moveTo(px + 0.5, py); ctx.lineTo(px + 0.5, py + CELL); }
+              if (cell.walls.e) { ctx.moveTo(px + CELL - 0.5, py); ctx.lineTo(px + CELL - 0.5, py + CELL); }
+            }
+          }
+          ctx.stroke();
+        }
       } else {
         drawMaze();
       }
@@ -398,6 +418,7 @@
       drawResetCounts();
       drawPlayer();
       drawMonsters();
+      drawFairies();
       drawParticles();
     }
 
@@ -576,6 +597,17 @@
 
       // Update checkpoint
       updateCheckpoint();
+
+      // Check if player walked into a fairy
+      if (lamplightEnabled) {
+        for (let i = fairies.length - 1; i >= 0; i--) {
+          if (fairies[i].x === player.x && fairies[i].y === player.y) {
+            fairyRevealTimer = 1.5;
+            spawnParticles(player.x * CELL + CELL / 2, player.y * CELL + CELL / 2, 12, 'win');
+            fairies.splice(i, 1);
+          }
+        }
+      }
 
       // Check if player walked into a monster
       if (lamplightEnabled && monsters.some(m => m.x === player.x && m.y === player.y)) {
@@ -816,6 +848,101 @@
       }
     }
 
+    // === FAIRIES (Lamplight mode only) ===
+
+    function spawnFairies() {
+      fairies = [];
+      fairyRevealTimer = 0;
+      if (!lamplightEnabled) return;
+      for (let i = 0; i < 3; i++) {
+        let fx, fy;
+        do {
+          fx = Math.floor(Math.random() * COLS);
+          fy = Math.floor(Math.random() * ROWS);
+        } while (Math.abs(fx - player.x) + Math.abs(fy - player.y) < 5);
+        fairies.push({ x: fx, y: fy, moveTimer: 0 });
+      }
+    }
+
+    function updateFairies(dt) {
+      if (!lamplightEnabled || gameState !== 'playing') return;
+
+      // Tick down the map reveal effect
+      if (fairyRevealTimer > 0) {
+        fairyRevealTimer = Math.max(0, fairyRevealTimer - dt);
+      }
+
+      for (let i = fairies.length - 1; i >= 0; i--) {
+        const f = fairies[i];
+        f.moveTimer += dt;
+        // Fairies drift slower than monsters — ethereal pace
+        if (f.moveTimer < 0.6) continue;
+        f.moveTimer = 0;
+
+        const dirs = [];
+        const cell = grid[f.y][f.x];
+        if (!cell.walls.n && f.y > 0) dirs.push([0, -1]);
+        if (!cell.walls.s && f.y < ROWS - 1) dirs.push([0, 1]);
+        if (!cell.walls.w && f.x > 0) dirs.push([-1, 0]);
+        if (!cell.walls.e && f.x < COLS - 1) dirs.push([1, 0]);
+
+        if (dirs.length > 0) {
+          const [dx, dy] = dirs[Math.floor(Math.random() * dirs.length)];
+          f.x += dx;
+          f.y += dy;
+        }
+
+        // Player touches fairy: briefly illuminate the whole map
+        if (f.x === player.x && f.y === player.y) {
+          fairyRevealTimer = 1.5; // seconds of full illumination
+          spawnParticles(f.x * CELL + CELL / 2, f.y * CELL + CELL / 2, 12, 'win');
+          fairies.splice(i, 1);
+        }
+      }
+    }
+
+    function drawFairies() {
+      if (!lamplightEnabled || gameState !== 'playing') return;
+
+      const GLOW_RADIUS = 3;
+      for (const f of fairies) {
+        const fpx = f.x * CELL;
+        const fpy = f.y * CELL;
+
+        // Soft green glow around the fairy — illuminates nearby walls
+        for (let dy = -2; dy <= 2; dy++) {
+          for (let dx = -2; dx <= 2; dx++) {
+            const gx = f.x + dx;
+            const gy = f.y + dy;
+            if (gx < 0 || gx >= COLS || gy < 0 || gy >= ROWS) continue;
+            const dist = Math.abs(dx) + Math.abs(dy);
+            if (dist > 2) continue;
+            const alpha = 0.4 * (1.0 - (dist / 3));
+            drawCellWalls(gx, gy, alpha);
+          }
+        }
+
+        // Check if fairy is within the player's lamplight glow radius
+        const dist = Math.abs(f.x - player.x) + Math.abs(f.y - player.y);
+        const inGlow = dist <= GLOW_RADIUS;
+
+        if (inGlow) {
+          // In lamplight: soft glowing sprite body
+          const alpha = 1.0 - (dist / (GLOW_RADIUS + 1));
+          ctx.fillStyle = 'rgba(150, 255, 150, ' + (alpha * 0.5) + ')';
+          ctx.fillRect(fpx + 1, fpy + 1, CELL - 2, CELL - 2);
+          ctx.fillStyle = 'rgba(100, 255, 100, ' + alpha + ')';
+          ctx.fillRect(fpx + 2, fpy + 3, 1, 1);
+          ctx.fillRect(fpx + 5, fpy + 3, 1, 1);
+        } else {
+          // In the dark: glowing green eyes
+          ctx.fillStyle = '#66ff66';
+          ctx.fillRect(fpx + 2, fpy + 3, 1, 1);
+          ctx.fillRect(fpx + 5, fpy + 3, 1, 1);
+        }
+      }
+    }
+
     // === GAME LOOP ===
 
     let lastTime = 0;
@@ -826,6 +953,7 @@
 
       if (gameState === 'playing' || gameState === 'win') {
         updateMonsters(dt);
+        updateFairies(dt);
         updateParticles(dt);
         render();
       }
@@ -852,6 +980,7 @@
       checkpointResets = new Map();
       updateScoreboard();
       spawnMonsters();
+      spawnFairies();
 
       gameState = 'playing';
       document.getElementById('start-screen').classList.add('hidden');
