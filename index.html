@@ -505,7 +505,12 @@
     function showDeadEnd() {
       gameState = 'deadEnd';
       const resumeBtn = document.getElementById('resume-btn');
-      resumeBtn.style.display = checkpointEnabled ? 'inline-block' : 'none';
+      // Only offer checkpoint resume at structural dead ends (3 walls = 1 way out).
+      // If the player is stuck because all neighbors are visited but they have
+      // multiple passages, they must restart — no shortcut out of a loop.
+      const cell = grid[player.y][player.x];
+      const wallCount = [cell.walls.n, cell.walls.s, cell.walls.e, cell.walls.w].filter(Boolean).length;
+      resumeBtn.style.display = (checkpointEnabled && wallCount >= 3) ? 'inline-block' : 'none';
       document.getElementById('dead-end-screen').classList.remove('hidden');
       document.getElementById('help-btn').classList.add('hidden');
     }
