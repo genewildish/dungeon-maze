@@ -111,6 +111,13 @@
     }
     #help-btn:hover { color: #ffdd57; border-color: #ffdd57; }
     #help-btn.hidden { display: none; }
+    .exit-hint {
+      margin-top: 1.5rem;
+      font-size: 0.7rem;
+      color: #555;
+      letter-spacing: 0.05em;
+      font-style: italic;
+    }
   </style>
 </head>
 <body>
@@ -134,6 +141,7 @@
         <label for="lamplight-toggle">Lamplight</label>
       </div>
       <button id="start-btn">START</button>
+      <div class="exit-hint">press escape to escape</div>
     </div>
 
 
@@ -172,6 +180,17 @@
 
     const canvas = document.getElementById('maze');
     const ctx = canvas.getContext('2d');
+
+    // Detect ClockworkPi (or any embedded target) via ?platform=clockworkpi URL param.
+    // When running on-device, scale the canvas to fill the viewport so the game
+    // uses the full screen rather than sitting in the center of a desktop browser.
+    const isClockworkPi = new URLSearchParams(window.location.search).get('platform') === 'clockworkpi';
+    if (isClockworkPi) {
+      // Leave 120px for the scoreboard sidebar + gap; 20px vertical breathing room.
+      const size = Math.min(window.innerHeight - 20, window.innerWidth - 120);
+      canvas.style.width  = size + 'px';
+      canvas.style.height = size + 'px';
+    }
 
     let gameState = 'start'; // start | playing | win
     let grid = [];
@@ -624,6 +643,16 @@
     }
 
     document.addEventListener('keydown', (e) => {
+      // Escape exits the game (back to desktop)
+      if (e.key === 'Escape') {
+        window.close(); // Works in kiosk mode on most systems
+        return;
+      }
+      // Enter/Space advance through start and win screens (works with D-pad center button)
+      if (e.key === 'Enter' || e.key === ' ') {
+        if (gameState === 'start') { startGame(); return; }
+        if (gameState === 'win')   { playAgain(); return; }
+      }
       const keyMap = {
         ArrowUp: 'n', ArrowDown: 's', ArrowLeft: 'w', ArrowRight: 'e',
         w: 'n', s: 's', a: 'w', d: 'e'
@@ -943,6 +972,77 @@
       }
     }
 
+    // === GAMEPAD SUPPORT ===
+    // Polls the Gamepad API each frame to support D-pad / analog stick input.
+    // Works alongside keyboard — both paths call movePlayer(dir) identically.
+    // Axes are checked first (covers analog sticks and D-pads-as-axes).
+    // Buttons 12-15 cover D-pads on standard gamepad layout.
+    // Start/win screens trigger on any button press (rising-edge detected).
+
+    let lastGamepadMove = 0;
+    const GAMEPAD_MOVE_DELAY = 150; // ms between moves when held
+    let prevGamepadButtons = []; // for rising-edge detection on start/win screens
+
+    function pollGamepad() {
+      if (!navigator.getGamepads) return;
+      const gamepads = navigator.getGamepads();
+
+      for (let gi = 0; gi < gamepads.length; gi++) {
+        const gp = gamepads[gi];
+        if (!gp) continue;
+
+        if (!prevGamepadButtons[gi]) prevGamepadButtons[gi] = new Array(gp.buttons.length).fill(false);
+
+        if (gameState === 'start' || gameState === 'win') {
+          // Rising-edge any-button → advance screen
+          for (let i = 0; i < gp.buttons.length; i++) {
+            if (gp.buttons[i].pressed && !prevGamepadButtons[gi][i]) {
+              if (gameState === 'start') startGame();
+              else playAgain();
+              prevGamepadButtons[gi] = Array.from(gp.buttons, b => b.pressed);
+              return;
+            }
+          }
+          prevGamepadButtons[gi] = Array.from(gp.buttons, b => b.pressed);
+          continue;
+        }
+
+        prevGamepadButtons[gi] = Array.from(gp.buttons, b => b.pressed);
+
+        if (gameState !== 'playing') continue;
+
+        const now = performance.now();
+        if (now - lastGamepadMove < GAMEPAD_MOVE_DELAY) continue;
+
+        const DEADZONE = 0.5;
+        let dir = null;
+
+        // Check all axis pairs (covers both analog sticks and D-pad-as-axes)
+        for (let a = 0; a + 1 < gp.axes.length && !dir; a += 2) {
+          const ax = gp.axes[a];
+          const ay = gp.axes[a + 1];
+          if      (ax < -DEADZONE) dir = 'w';
+          else if (ax >  DEADZONE) dir = 'e';
+          else if (ay < -DEADZONE) dir = 'n';
+          else if (ay >  DEADZONE) dir = 's';
+        }
+
+        // Standard gamepad D-pad buttons: 12=up 13=down 14=left 15=right
+        if (!dir) {
+          if      (gp.buttons[12]?.pressed) dir = 'n';
+          else if (gp.buttons[13]?.pressed) dir = 's';
+          else if (gp.buttons[14]?.pressed) dir = 'w';
+          else if (gp.buttons[15]?.pressed) dir = 'e';
+        }
+
+        if (dir) {
+          lastGamepadMove = now;
+          movePlayer(dir);
+          return; // one move per poll
+        }
+      }
+    }
+
     // === GAME LOOP ===
 
     let lastTime = 0;
@@ -950,6 +1050,8 @@
     function gameLoop(timestamp) {
       const dt = Math.min((timestamp - lastTime) / 1000, 0.05); // cap delta
       lastTime = timestamp;
+
+      pollGamepad();
 
       if (gameState === 'playing' || gameState === 'win') {
         updateMonsters(dt);
