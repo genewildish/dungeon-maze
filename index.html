@@ -424,8 +424,19 @@
         drawCellWalls(player.trail[i][0], player.trail[i][1], alpha);
       }
 
-      // Current cell always at full brightness
-      drawCellWalls(player.x, player.y, 1.0);
+      // Glow radius around the player — walls fade with Manhattan distance
+      const GLOW_RADIUS = 3;
+      for (let dy = -GLOW_RADIUS; dy <= GLOW_RADIUS; dy++) {
+        for (let dx = -GLOW_RADIUS; dx <= GLOW_RADIUS; dx++) {
+          const gx = player.x + dx;
+          const gy = player.y + dy;
+          if (gx < 0 || gx >= COLS || gy < 0 || gy >= ROWS) continue;
+          const dist = Math.abs(dx) + Math.abs(dy);
+          if (dist > GLOW_RADIUS) continue;
+          const alpha = 1.0 - (dist / (GLOW_RADIUS + 1));
+          drawCellWalls(gx, gy, alpha);
+        }
+      }
 
       // Entry and exit markers stay visible for orientation
       if (solutionPath.length > 0) {
