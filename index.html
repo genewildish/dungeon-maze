@@ -145,6 +145,8 @@
     let gameState = 'start'; // start | playing | deadEnd | win
     let grid = [];
     let solutionPath = [];
+    let entrance = { x: 0, y: 0, wall: 'w' };
+    let exitCell = { x: 0, y: 0, wall: 'e' };
     let player = { x: 0, y: 0, lastCheckpointIndex: 0, trail: [], visitedSet: new Set() };
     let particles = [];
     let trailEnabled = true;
@@ -181,18 +183,35 @@
       return neighbors;
     }
 
+    function randomEdgeCell() {
+      // Pick a random cell on any edge of the grid and return
+      // which border wall should be opened for entry/exit
+      const edge = Math.floor(Math.random() * 4);
+      switch (edge) {
+        case 0: return { x: Math.floor(Math.random() * COLS), y: 0, wall: 'n' };
+        case 1: return { x: Math.floor(Math.random() * COLS), y: ROWS - 1, wall: 's' };
+        case 2: return { x: 0, y: Math.floor(Math.random() * ROWS), wall: 'w' };
+        case 3: return { x: COLS - 1, y: Math.floor(Math.random() * ROWS), wall: 'e' };
+      }
+    }
+
     function generateSolutionPath() {
       solutionPath = [];
-      const startY = Math.floor(Math.random() * ROWS);
-      let x = 0, y = startY;
 
+      // Pick random entrance and exit on any edge, at least 1 cell apart
+      entrance = randomEdgeCell();
+      do {
+        exitCell = randomEdgeCell();
+      } while (exitCell.x === entrance.x && exitCell.y === entrance.y);
+
+      let x = entrance.x, y = entrance.y;
       grid[y][x].visited = true;
       solutionPath.push([x, y]);
 
-      // Open entry wall
-      grid[y][x].walls.w = false;
+      // Open entrance border wall
+      grid[y][x].walls[entrance.wall] = false;
 
-      while (x < COLS - 1) {
+      while (!(x === exitCell.x && y === exitCell.y)) {
         const neighbors = getNeighbors(x, y, true); // only unvisited
         if (neighbors.length === 0) {
           // Backtrack along path to find cell with unvisited neighbors
@@ -204,10 +223,25 @@
           continue;
         }
 
-        // Weighted direction selection: E=40%, N=20%, S=20%, W=20%
+        // Dynamic bias toward the exit: 40% weight toward the direction
+        // that reduces the largest remaining axis distance, 20% for others.
+        // The bias axis is chosen proportionally so diagonal paths don't oscillate.
+        const dx = exitCell.x - x;
+        const dy = exitCell.y - y;
+        const absDx = Math.abs(dx);
+        const absDy = Math.abs(dy);
+        let biasDir;
+        if (absDx + absDy === 0) {
+          biasDir = null; // at exit — shouldn't happen in the loop
+        } else if (Math.random() < absDx / (absDx + absDy)) {
+          biasDir = dx > 0 ? 'e' : 'w';
+        } else {
+          biasDir = dy > 0 ? 's' : 'n';
+        }
+
         const weighted = [];
         for (const [nx, ny, dir] of neighbors) {
-          const weight = dir === 'e' ? 40 : 20;
+          const weight = dir === biasDir ? 40 : 20;
           for (let i = 0; i < weight; i++) weighted.push([nx, ny]);
         }
         const [nx, ny] = weighted[Math.floor(Math.random() * weighted.length)];
@@ -219,9 +253,8 @@
         y = ny;
       }
 
-      // Open exit wall
-      const lastCell = solutionPath[solutionPath.length - 1];
-      grid[lastCell[1]][lastCell[0]].walls.e = false;
+      // Open exit border wall
+      grid[exitCell.y][exitCell.x].walls[exitCell.wall] = false;
     }
 
     function fillMaze() {
@@ -320,13 +353,15 @@
       }
       ctx.stroke();
 
-      // Draw entry and exit openings with a highlight color
+      // Draw entry and exit openings with a highlight color on whichever edge they sit
       if (solutionPath.length > 0) {
         ctx.fillStyle = COLORS.wallHighlight;
-        const entryY = solutionPath[0][1];
-        ctx.fillRect(0, entryY * CELL + 1, 2, CELL - 2);
-        const exitY = solutionPath[solutionPath.length - 1][1];
-        ctx.fillRect(COLS * CELL - 2, exitY * CELL + 1, 2, CELL - 2);
+        for (const portal of [entrance, exitCell]) {
+          if (portal.wall === 'n') ctx.fillRect(portal.x * CELL + 1, 0, CELL - 2, 2);
+          if (portal.wall === 's') ctx.fillRect(portal.x * CELL + 1, ROWS * CELL - 2, CELL - 2, 2);
+          if (portal.wall === 'w') ctx.fillRect(0, portal.y * CELL + 1, 2, CELL - 2);
+          if (portal.wall === 'e') ctx.fillRect(COLS * CELL - 2, portal.y * CELL + 1, 2, CELL - 2);
+        }
       }
     }
 
@@ -363,21 +398,20 @@
 
     function canMove(x, y, dir) {
       // Block moving back out the entrance
-      if (dir === 'w' && x === 0) return false;
-      // Block east movement off the grid (exit handled separately in movePlayer)
-      if (dir === 'e' && x === COLS - 1) return false;
+      if (x === entrance.x && y === entrance.y && dir === entrance.wall) return false;
+      // Block moving off any grid edge (exit handled separately in movePlayer)
       if (dir === 'n') return !grid[y][x].walls.n && y > 0;
       if (dir === 's') return !grid[y][x].walls.s && y < ROWS - 1;
-      if (dir === 'w') return !grid[y][x].walls.w;
-      if (dir === 'e') return !grid[y][x].walls.e;
+      if (dir === 'w') return !grid[y][x].walls.w && x > 0;
+      if (dir === 'e') return !grid[y][x].walls.e && x < COLS - 1;
       return false;
     }
 
     function movePlayer(dir) {
       if (gameState !== 'playing') return;
 
-      // Check for exit before normal movement
-      if (player.x === COLS - 1 && dir === 'e' && !grid[player.y][player.x].walls.e) {
+      // Check for exit before normal movement — win when stepping through exit wall
+      if (player.x === exitCell.x && player.y === exitCell.y && dir === exitCell.wall) {
         winGame();
         return;
       }
