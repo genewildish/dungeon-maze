@@ -359,6 +359,28 @@
         generateSolutionPath();
       } while (solutionPath.length < minPathLength);
       fillMaze();
+
+      // In lamplight mode, punch random holes in walls to create shortcuts
+      // that help the player evade monsters. Number of holes = 1/4 the
+      // corner-to-corner Manhattan distance that sets the min path length.
+      if (lamplightEnabled) {
+        const holeCount = Math.floor(minPathLength / 4);
+        for (let i = 0; i < holeCount; i++) {
+          const x = Math.floor(Math.random() * COLS);
+          const y = Math.floor(Math.random() * ROWS);
+          const cell = grid[y][x];
+          // Collect walls that can be removed (must have a neighbor on the other side)
+          const candidates = [];
+          if (cell.walls.n && y > 0) candidates.push([x, y, x, y - 1]);
+          if (cell.walls.s && y < ROWS - 1) candidates.push([x, y, x, y + 1]);
+          if (cell.walls.w && x > 0) candidates.push([x, y, x - 1, y]);
+          if (cell.walls.e && x < COLS - 1) candidates.push([x, y, x + 1, y]);
+          if (candidates.length > 0) {
+            const [x1, y1, x2, y2] = candidates[Math.floor(Math.random() * candidates.length)];
+            removeWall(x1, y1, x2, y2);
+          }
+        }
+      }
     }
 
     // === RENDERING ===
