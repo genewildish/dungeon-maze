@@ -26,7 +26,7 @@ The solution path is an ordered array of ~40-80 cells. To place 3 well-distribut
 
 - Divide the solution path into 4 equal segments, creating division points at ~25%, ~50%, and ~75% of the path length.
 - Add jitter: pick a random cell within ±3 indices of each division point. Clamp the result to `[2, solutionPath.length - 3]` to avoid placing branches at the very start or end of the solution.
-- Each branch point must have at least one unvisited neighbor. If not, slide along the solution path until one is found.
+- Each branch point must have at least one unvisited neighbor. If not, slide forward along the solution path (toward the exit) until one is found. If the end is reached without finding one, slide backward from the original point. If no valid branch point exists in that segment (extremely unlikely), skip that decoy.
 
 This prevents branches from clustering together and ensures they span the full length of the solution.
 
@@ -34,7 +34,9 @@ This prevents branches from clustering together and ensures they span the full l
 
 Each decoy targets a different edge of the grid. The right (east) edge is excluded since the solution path already exits there — a decoy running parallel to the solution near the exit would be confusing rather than fun. That leaves 3 edges (north, south, west) for 3 branches — one each, no conflicts.
 
-Assignment uses a greedy loop: process branch points in solution-path order. Each picks the farthest available edge from its grid position. Since there are exactly 3 edges for 3 branches, each gets a unique target.
+Assignment uses a greedy loop: process branch points in solution-path order. Each picks the farthest available edge from its grid position, measured by Manhattan distance from the branch point to the nearest cell on that edge (e.g., distance to north edge = branch point's `y`, distance to west edge = branch point's `x`). Ties are broken randomly. Since there are exactly 3 edges for 3 branches, each gets a unique target.
+
+Note: the west-targeting decoy starts from a solution path cell that trends eastward, so it may travel farther and is more likely to hit its length cap before reaching the edge. This is acceptable — it still creates a long, convincing detour.
 
 The target cell is placed 1-2 cells from the target edge at a random position along that edge (e.g., targeting the north edge means `y = 1`, random `x`).
 
@@ -44,8 +46,8 @@ Each decoy uses the same biased random walk pattern as the solution path:
 
 1. **Start** from the branch point on the solution path. First step goes to an unvisited neighbor.
 2. **Wall removal** — each step removes the wall between the current cell and the next, exactly like the solution path walk. This is what creates passable corridors.
-3. **Directional bias** toward the target edge: 40% weight for the target direction, 20% each for the other three. Uses the same weighted-pool approach as `generateSolutionPath()`.
-4. **Self-avoiding** — only walks through unvisited cells. Backtracks if cornered. Backtracking stops at the branch point — if the branch point has no remaining unvisited neighbors, the decoy terminates with whatever it carved.
+3. **Directional bias** toward the target edge: 40% weight for the target direction, 20% each for the other three. Weights are applied only to available (unvisited) neighbors, then sampled from the resulting pool — same filtering approach as `generateSolutionPath()`.
+4. **Self-avoiding** — only walks through unvisited cells. Backtracks if cornered. When backtracking reaches the branch point, try the branch point's other unvisited neighbors before giving up. If no unvisited neighbors remain, terminate the decoy with whatever it carved.
 5. **Target length** — before each walk begins, pick a random target length uniformly from `[0.5 * solutionPath.length, 0.75 * solutionPath.length]`.
 6. **Stop conditions** (whichever comes first):
    - Walk reaches within 1-2 cells of the target edge (success).
@@ -55,7 +57,7 @@ Each decoy uses the same biased random walk pattern as the solution path:
 
 ### Collision Handling & Edge Cases
 
-- **Decoy-to-decoy collision:** Each decoy marks cells visited as it goes. Later decoys naturally avoid earlier ones. On a 25x25 grid (625 cells), worst case is ~80 solution cells + 3 decoys at ~60 cells each = ~260 cells (42% of grid), leaving 365 cells for Phase 2. Typical case is ~60 solution cells + ~30-45 per decoy = ~150-195 cells, leaving ample room.
+- **Decoy-to-decoy collision:** Each decoy marks cells visited as it goes. Later decoys naturally avoid earlier ones. On a 25x25 grid (625 cells), worst case is ~80 solution cells + 3 decoys at ~60 cells each = ~260 cells (42% of grid), leaving 365 cells for Phase 2. Typical case is ~60 solution cells + ~30-45 per decoy = ~150-195 cells, leaving ample room. In practice, decoys will often be shorter than their target length due to collisions and backtracking.
 - **Short decoy fallback:** If a decoy gets stuck early (under 10 cells), it remains as a shorter branch. No retry logic — Phase 2 may extend it organically.
 - **No visual distinction:** Decoy corridors are indistinguishable from any other corridor after Phase 2 fills the grid.
 - **Checkpoint system unaffected:** Checkpoints only track progress along `solutionPath`. Decoy branches are regular corridors from gameplay's perspective.
