@@ -186,7 +186,8 @@
         <label for="lamplight-toggle">Lamplight</label>
       </div>
       <button id="start-btn">START</button>
-      <div class="exit-hint">press escape to escape</div>
+      <!-- Exit hint shown only on ClockworkPi (when ?platform=clockworkpi) -->
+      <div id="exit-hint" class="exit-hint hidden">press escape to escape</div>
     </div>
 
 
@@ -246,6 +247,8 @@
       const size = Math.min(window.innerHeight - 20, window.innerWidth - 120);
       canvas.style.width  = size + 'px';
       canvas.style.height = size + 'px';
+      // Show exit hint only on ClockworkPi
+      document.getElementById('exit-hint').classList.remove('hidden');
     }
 
     let gameState = 'start'; // start | playing | win
