@@ -122,40 +122,38 @@
       letter-spacing: 0.05em;
       font-style: italic;
     }
-    /* Portrait phones: stack scoreboard below canvas */
+    /* Controls sidebar: D-pad above scoreboard by default (landscape / desktop) */
+    #controls {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      gap: 1.25rem;
+    }
+
+    /* Portrait phones: wrapper stacks vertically; controls becomes a row
+       so the D-pad sits to the left of the scoreboard, both below the canvas */
     @media (orientation: portrait) and (max-width: 640px) {
       #wrapper {
         flex-direction: column;
         align-items: center;
       }
-      #scoreboard {
-        display: flex;
+      #controls {
         flex-direction: row;
-        width: auto;
         align-items: center;
-        gap: 0.75rem;
-        padding: 0.25rem 0;
-        text-align: left;
+        gap: 1.5rem;
       }
-      #scoreboard h3 { margin-bottom: 0; }
+      #scoreboard { padding-top: 0; }
       #scoreboard .hint { display: none; }
       #reset-total { font-size: 1.5rem; }
-    }
-    /* Landscape phones: canvas already shrinks to fit; keep row layout */
-    @media (orientation: landscape) and (max-height: 500px) {
-      #scoreboard { padding-top: 0; }
     }
 
     /* Mobile D-Pad (touch controls on phones/tablets) */
     #mobile-dpad {
-      position: absolute;
-      bottom: 1rem;
-      left: 1rem;
       display: flex;
       flex-direction: column;
       gap: 0.25rem;
       align-items: center;
-      z-index: 10;
     }
     #mobile-dpad.hidden { display: none; }
     .dpad-btn {
@@ -214,7 +212,10 @@
 
     <!-- Help Button (during gameplay) -->
     <button id="help-btn" class="hidden">HELP</button>
+  </div><!-- /game-container -->
 
+  <!-- Controls sidebar: D-pad + scoreboard, always outside the maze -->
+  <div id="controls">
     <!-- Mobile D-Pad (touch controls, shown only on touch devices) -->
     <div id="mobile-dpad" class="hidden">
       <button id="dpad-up" class="dpad-btn" data-dir="n">▲</button>
@@ -224,12 +225,12 @@
         <button id="dpad-right" class="dpad-btn" data-dir="e">▶</button>
       </div>
     </div>
-  </div>
-  <div id="scoreboard">
-    <h3>RESETS</h3>
-    <div id="reset-total">0</div>
-    <div class="hint">lower is better</div>
-  </div>
+    <div id="scoreboard">
+      <h3>RESETS</h3>
+      <div id="reset-total">0</div>
+      <div class="hint">lower is better</div>
+    </div>
+  </div><!-- /controls -->
   </div><!-- /wrapper -->
 
   <script>
