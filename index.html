@@ -186,8 +186,12 @@
         <label for="lamplight-toggle">Lamplight</label>
       </div>
       <button id="start-btn">START</button>
-      <!-- Exit hint shown only on ClockworkPi (when ?platform=clockworkpi) -->
-      <div id="exit-hint" class="exit-hint hidden">press escape to escape</div>
+      <div style="margin-top: 1rem; font-size: 0.7rem; color: #888; line-height: 1.4; max-width: 220px; text-align: center;">
+        Arrow keys or WASD to move.<br>
+        Find the glowing exit.<br>
+        Lamplight mode adds monsters and fairies.
+      </div>
+      <div class="exit-hint">press escape to escape</div>
     </div>
 
 
@@ -256,7 +260,7 @@
     let solutionPath = [];
     let entrance = { x: 0, y: 0, wall: 'w' };
     let exitCell = { x: 0, y: 0, wall: 'e' };
-    let player = { x: 0, y: 0, lastCheckpointIndex: 0, trail: [], visitedSet: new Set() };
+    let player = { x: 0, y: 0, lastCheckpointIndex: 0, trail: [], visitedSet: new Set(), health: 2, invulnerable: 0 };
     let particles = [];
     let checkpointResets = new Map(); // "x,y" -> count of resets at that cell
     let trailEnabled = true;
@@ -265,6 +269,9 @@
     let monsters = [];
     let fairies = [];
     let fairyRevealTimer = 0; // seconds remaining of full-map illumination
+    let fadeTrail = []; // {x, y, life} - fading movement trail behind player
+    let fairyPathTimer = 0; // seconds remaining for fairy solution-path reveal
+    let resetFlashTimer = 0; // seconds remaining for reset solution flash
 
     // === GRID & MAZE GENERATION ===
 
@@ -471,28 +478,22 @@
 
       if (lamplightEnabled) {
         drawLamplight();
-        // Fairy reveal: briefly show all walls, fading out
-        if (fairyRevealTimer > 0) {
-          ctx.strokeStyle = 'rgba(100, 255, 100, ' + Math.min(1, fairyRevealTimer) + ')';
-          ctx.lineWidth = 1;
-          ctx.beginPath();
-          for (let y = 0; y < ROWS; y++) {
-            for (let x = 0; x < COLS; x++) {
-              const px = x * CELL;
-              const py = y * CELL;
-              const cell = grid[y][x];
-              if (cell.walls.n) { ctx.moveTo(px, py + 0.5); ctx.lineTo(px + CELL, py + 0.5); }
-              if (cell.walls.s) { ctx.moveTo(px, py + CELL - 0.5); ctx.lineTo(px + CELL, py + CELL - 0.5); }
-              if (cell.walls.w) { ctx.moveTo(px + 0.5, py); ctx.lineTo(px + 0.5, py + CELL); }
-              if (cell.walls.e) { ctx.moveTo(px + CELL - 0.5, py); ctx.lineTo(px + CELL - 0.5, py + CELL); }
-            }
+        // Fairy path reveal: dimly light the solution path from player to exit (gold)
+        if (fairyPathTimer > 0) {
+          const pathAlpha = Math.min(1, fairyPathTimer) * 0.4;
+          for (let i = player.lastCheckpointIndex; i < solutionPath.length; i++) {
+            const [sx, sy] = solutionPath[i];
+            ctx.fillStyle = 'rgba(255, 170, 68, ' + (pathAlpha * 0.2) + ')';
+            ctx.fillRect(sx * CELL + 1, sy * CELL + 1, CELL - 2, CELL - 2);
+            drawCellWalls(sx, sy, pathAlpha);
           }
-          ctx.stroke();
         }
       } else {
         drawMaze();
       }
       drawTrail();
+      drawFadeTrail();
+      drawResetFlash();
       drawResetCounts();
       drawPlayer();
       drawMonsters();
@@ -562,10 +563,34 @@
       ctx.fillStyle = COLORS.wallHighlight;
       drawPortalMark(entrance);
 
-      // Exit: gentle undulating glow that beckons the player (alpha 0.3–1.0)
+      // Exit: bright amber strobe with lamplight effect (3x brighter than original)
       const t = performance.now() / 1000;
-      const exitAlpha = 0.3 + 0.7 * (0.5 + 0.5 * Math.sin(t * 2.0));
-      ctx.fillStyle = 'rgba(126, 200, 117, ' + exitAlpha + ')';
+      const exitPulse = 0.5 + 0.5 * Math.sin(t * 3.0);
+
+      // Radiating glow around exit — warm amber halo like the character
+      const EXIT_GLOW = 2;
+      for (let dy = -EXIT_GLOW; dy <= EXIT_GLOW; dy++) {
+        for (let dx = -EXIT_GLOW; dx <= EXIT_GLOW; dx++) {
+          const gx = exitCell.x + dx;
+          const gy = exitCell.y + dy;
+          if (gx < 0 || gx >= COLS || gy < 0 || gy >= ROWS) continue;
+          const dist = Math.abs(dx) + Math.abs(dy);
+          if (dist > EXIT_GLOW || dist === 0) continue;
+          const glowAlpha = (0.1 + 0.08 * exitPulse) * (1.0 - dist / (EXIT_GLOW + 1));
+          ctx.fillStyle = 'rgba(255, 200, 100, ' + glowAlpha + ')';
+          ctx.fillRect(gx * CELL, gy * CELL, CELL, CELL);
+        }
+      }
+
+      // Amber glow filling the exit cell — beacon visible even in the dark
+      ctx.fillStyle = 'rgba(255, 200, 100, ' + (0.3 + 0.6 * exitPulse) + ')';
+      ctx.fillRect(exitCell.x * CELL, exitCell.y * CELL, CELL, CELL);
+
+      // Illuminate walls around exit cell in lamplight amber
+      drawCellWalls(exitCell.x, exitCell.y, 0.6 + 0.4 * exitPulse);
+
+      // Bright amber portal mark
+      ctx.fillStyle = 'rgba(255, 221, 87, ' + (0.7 + 0.3 * exitPulse) + ')';
       drawPortalMark(exitCell);
     }
 
@@ -592,6 +617,8 @@
 
     function drawPlayer() {
       if (gameState !== 'playing') return;
+      // Blink when invulnerable — skip drawing every other 0.1s interval
+      if (player.invulnerable > 0 && Math.floor(player.invulnerable * 10) % 2 === 0) return;
       const px = player.x * CELL + 2;
       const py = player.y * CELL + 2;
       // Glow effect
@@ -607,6 +634,29 @@
       ctx.fillStyle = COLORS.trail;
       for (const [tx, ty] of player.trail) {
         ctx.fillRect(tx * CELL + 1, ty * CELL + 1, CELL - 2, CELL - 2);
+      }
+    }
+
+    function drawFadeTrail() {
+      if (gameState !== 'playing') return;
+      for (const ft of fadeTrail) {
+        ctx.fillStyle = 'rgba(255, 200, 100, ' + (ft.life * 0.35) + ')';
+        ctx.fillRect(ft.x * CELL + 2, ft.y * CELL + 2, CELL - 4, CELL - 4);
+      }
+    }
+
+    function drawResetFlash() {
+      if (resetFlashTimer <= 0 || gameState !== 'playing') return;
+      // Quick fade-out: full brightness for first 0.3s then fade
+      const flashAlpha = Math.min(1, resetFlashTimer / 0.3);
+      const showCount = Math.floor(solutionPath.length / 3);
+      for (let i = 0; i < showCount; i++) {
+        const [sx, sy] = solutionPath[i];
+        ctx.fillStyle = 'rgba(255, 170, 68, ' + (flashAlpha * 0.4) + ')';
+        ctx.fillRect(sx * CELL + 1, sy * CELL + 1, CELL - 2, CELL - 2);
+        if (lamplightEnabled) {
+          drawCellWalls(sx, sy, flashAlpha * 0.6);
+        }
       }
     }
 
@@ -666,6 +716,7 @@
 
       player.visitedSet.add(player.x + ',' + player.y);
       player.trail.push([player.x, player.y]);
+      fadeTrail.push({ x: player.x, y: player.y, life: 1.0 });
       player.x = nx;
       player.y = ny;
       player.visitedSet.add(nx + ',' + ny);
@@ -680,7 +731,7 @@
       if (lamplightEnabled) {
         for (let i = fairies.length - 1; i >= 0; i--) {
           if (fairies[i].x === player.x && fairies[i].y === player.y) {
-            fairyRevealTimer = 1.5;
+            fairyPathTimer = 3.0;
             spawnParticles(player.x * CELL + CELL / 2, player.y * CELL + CELL / 2, 12, 'win');
             fairies.splice(i, 1);
           }
@@ -691,11 +742,6 @@
       if (lamplightEnabled && monsters.some(m => m.x === player.x && m.y === player.y)) {
         monsterCaughtPlayer();
         return;
-      }
-
-      // Auto-resume from checkpoint at structural dead ends (3 walls)
-      if (isStructuralDeadEnd()) {
-        resumeFromCheckpoint();
       }
 
       render();
@@ -798,6 +844,9 @@
       player.visitedSet = new Set(player.trail.map(t => t[0] + ',' + t[1]));
       player.visitedSet.add(player.x + ',' + player.y);
 
+      // Flash of solution path hint (~1/3 of the way through)
+      resetFlashTimer = 2.8;
+
       spawnParticles(player.x * CELL + CELL / 2, player.y * CELL + CELL / 2, 10, 'teleport');
       render();
     }
@@ -836,6 +885,13 @@
         p.vx *= 0.98;
         p.vy *= 0.98;
         if (p.life <= 0) particles.splice(i, 1);
+      }
+    }
+
+    function updateFadeTrail(dt) {
+      for (let i = fadeTrail.length - 1; i >= 0; i--) {
+        fadeTrail[i].life -= dt * 0.5; // fade over ~2 seconds
+        if (fadeTrail[i].life <= 0) fadeTrail.splice(i, 1);
       }
     }
 
@@ -888,18 +944,37 @@
     }
 
     function monsterCaughtPlayer() {
-      // Reset player to the beginning
-      player.x = solutionPath[0][0];
-      player.y = solutionPath[0][1];
-      player.trail = [];
-      player.visitedSet = new Set([player.x + ',' + player.y]);
-      player.lastCheckpointIndex = 0;
+      // Invulnerable players shrug off hits
+      if (player.invulnerable > 0) return;
 
-      spawnParticles(player.x * CELL + CELL / 2, player.y * CELL + CELL / 2, 15, 'teleport');
+      player.health--;
+      updateHealthDisplay();
 
-      // Respawn monsters away from the new player position
-      spawnMonsters();
+      if (player.health <= 0) {
+        // Out of health — full reset to beginning
+        player.x = solutionPath[0][0];
+        player.y = solutionPath[0][1];
+        player.trail = [];
+        player.visitedSet = new Set([player.x + ',' + player.y]);
+        player.lastCheckpointIndex = 0;
+        player.health = 2;
+        updateHealthDisplay();
+
+        spawnParticles(player.x * CELL + CELL / 2, player.y * CELL + CELL / 2, 15, 'teleport');
+        spawnMonsters();
+      } else {
+        // Took a hit but still alive — brief invulnerability
+        player.invulnerable = 1.5;
+        spawnParticles(player.x * CELL + CELL / 2, player.y * CELL + CELL / 2, 10, 'teleport');
+        // Respawn the monster that hit us away from player
+        spawnMonsters();
+      }
       render();
+    }
+
+    function updateHealthDisplay() {
+      const el = document.getElementById('health-hearts');
+      if (el) el.textContent = '\u2665'.repeat(Math.max(0, player.health));
     }
 
     function drawMonsters() {
@@ -919,6 +994,10 @@
           const alpha = 1.0 - (dist / (GLOW_RADIUS + 1));
           ctx.fillStyle = 'rgba(50, 40, 35, ' + alpha + ')';
           ctx.fillRect(px + 1, py + 1, CELL - 2, CELL - 2);
+          // Thin red outline around the soot ball
+          ctx.strokeStyle = 'rgba(255, 50, 30, ' + alpha + ')';
+          ctx.lineWidth = 1;
+          ctx.strokeRect(px + 1.5, py + 1.5, CELL - 3, CELL - 3);
           // Beady red eyes on top of the soot ball
           ctx.fillStyle = 'rgba(255, 50, 30, ' + alpha + ')';
           ctx.fillRect(px + 2, py + 3, 1, 1);
@@ -951,9 +1030,9 @@
     function updateFairies(dt) {
       if (!lamplightEnabled || gameState !== 'playing') return;
 
-      // Tick down the map reveal effect
-      if (fairyRevealTimer > 0) {
-        fairyRevealTimer = Math.max(0, fairyRevealTimer - dt);
+      // Tick down the fairy path reveal effect
+      if (fairyPathTimer > 0) {
+        fairyPathTimer = Math.max(0, fairyPathTimer - dt);
       }
 
       for (let i = fairies.length - 1; i >= 0; i--) {
@@ -978,7 +1057,7 @@
 
         // Player touches fairy: briefly illuminate the whole map
         if (f.x === player.x && f.y === player.y) {
-          fairyRevealTimer = 1.5; // seconds of full illumination
+          fairyPathTimer = 3.0; // seconds of solution path illumination
           spawnParticles(f.x * CELL + CELL / 2, f.y * CELL + CELL / 2, 12, 'win');
           fairies.splice(i, 1);
         }
@@ -1112,6 +1191,9 @@
         updateMonsters(dt);
         updateFairies(dt);
         updateParticles(dt);
+        updateFadeTrail(dt);
+        if (resetFlashTimer > 0) resetFlashTimer = Math.max(0, resetFlashTimer - dt);
+        if (player.invulnerable > 0) player.invulnerable = Math.max(0, player.invulnerable - dt);
         render();
       }
 
@@ -1132,12 +1214,22 @@
       player.trail = [];
       player.visitedSet = new Set([player.x + ',' + player.y]);
       player.lastCheckpointIndex = 0;
+      player.health = 2;
+      player.invulnerable = 0;
       buildSolutionSet();
       particles = [];
+      fadeTrail = [];
+      fairyPathTimer = 0;
+      resetFlashTimer = 0;
       checkpointResets = new Map();
       updateScoreboard();
       spawnMonsters();
       spawnFairies();
+
+      // Show health display only in lamplight mode (monsters)
+      const healthEl = document.getElementById('health-display');
+      healthEl.style.display = lamplightEnabled ? 'block' : 'none';
+      updateHealthDisplay();
 
       gameState = 'playing';
       document.getElementById('start-screen').classList.add('hidden');
