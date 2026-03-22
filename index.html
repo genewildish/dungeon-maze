@@ -265,6 +265,8 @@
       const size = Math.min(window.innerHeight - 20, window.innerWidth - 120);
       canvas.style.width  = size + 'px';
       canvas.style.height = size + 'px';
+      // Match 3D canvas width to maze canvas
+      document.getElementById('canvas-3d').style.width = size + 'px';
       // Show exit hint only on ClockworkPi
       document.getElementById('exit-hint').classList.remove('hidden');
     }
@@ -974,6 +976,9 @@
         player.visitedSet = new Set([player.x + ',' + player.y]);
         player.lastCheckpointIndex = 0;
         player.health = 2;
+        // Reset facing to entrance direction
+        const oppDirs = { n: 's', s: 'n', e: 'w', w: 'e' };
+        player.facing = oppDirs[entrance.wall];
         updateHealthDisplay();
 
         spawnParticles(player.x * CELL + CELL / 2, player.y * CELL + CELL / 2, 15, 'teleport');
