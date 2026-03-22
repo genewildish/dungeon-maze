@@ -55,6 +55,15 @@
       width:  min(600px, calc(100vw - 1rem), calc(100dvh - 1rem));
       height: min(600px, calc(100vw - 1rem), calc(100dvh - 1rem));
     }
+    #canvas-3d {
+      display: none; /* hidden until toggled on */
+      aspect-ratio: 200 / 80;
+      /* Width matches maze canvas — same min() logic, height derived from aspect-ratio */
+      width: min(600px, calc(100vw - 1rem), calc(100dvh - 1rem));
+    }
+    #canvas-3d.active {
+      display: block;
+    }
     .overlay {
       position: absolute;
       top: 0; left: 0; right: 0; bottom: 0;
@@ -168,6 +177,7 @@
 <body>
   <div id="wrapper">
   <div id="game-container">
+    <canvas id="canvas-3d" width="200" height="80"></canvas>
     <canvas id="maze" width="200" height="200"></canvas>
 
     <!-- Start Screen -->
