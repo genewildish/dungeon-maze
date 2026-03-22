@@ -19,16 +19,23 @@
     }
     #wrapper {
       display: flex;
-      align-items: flex-start;
-      gap: 1rem;
+      flex-direction: column;
+      align-items: center;
+      gap: 0.5rem;
     }
     #game-container {
       position: relative;
     }
+    /* 3D strip + scoreboard sit in a row above the maze */
+    #top-bar {
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+    }
     #scoreboard {
       width: 80px;
       text-align: center;
-      padding-top: 0.5rem;
+      flex-shrink: 0;
     }
     #scoreboard h3 {
       color: #ff6b9d;
@@ -58,12 +65,16 @@
     #canvas-3d {
       display: none; /* hidden until toggled on */
       aspect-ratio: 200 / 20;
-      /* Width matches maze canvas — same min() logic, height derived from aspect-ratio */
-      width: min(600px, calc(100vw - 1rem), calc(100dvh - 1rem));
+      /* Override canvas defaults — sized by flex in #top-bar, not min() */
+      width: auto;
+      height: auto;
+      flex: 1;
+      min-width: 0;
     }
     #canvas-3d.active {
       display: block;
     }
+    /* When 3D is off, scoreboard still shows centered above the maze */
     .overlay {
       position: absolute;
       top: 0; left: 0; right: 0; bottom: 0;
@@ -117,26 +128,8 @@
       letter-spacing: 0.05em;
       font-style: italic;
     }
-    /* Controls sidebar: D-pad above scoreboard by default (landscape / desktop) */
-    #controls {
-      display: flex;
-      flex-direction: column;
-      align-items: center;
-      justify-content: center;
-      gap: 1.25rem;
-    }
-
-    /* Portrait phones: keep controls beside the game (sidebar stays),
-       shrink canvas to leave room for the controls column */
+    /* Portrait phones: everything stacks vertically, d-pad below maze */
     @media (orientation: portrait) and (max-width: 640px) {
-      canvas {
-        width:  min(600px, calc(100vw - 6rem), calc(100dvh - 1rem));
-        height: min(600px, calc(100vw - 6rem), calc(100dvh - 1rem));
-      }
-      #canvas-3d {
-        width: min(600px, calc(100vw - 6rem), calc(100dvh - 1rem));
-      }
-      #scoreboard { padding-top: 0; }
       #scoreboard .hint { display: none; }
       #reset-total { font-size: 1.5rem; }
     }
@@ -147,6 +140,7 @@
       flex-direction: column;
       gap: 0.25rem;
       align-items: center;
+      margin-top: 0.5rem;
     }
     #mobile-dpad.hidden { display: none; }
     .dpad-btn {
@@ -175,7 +169,18 @@
 <body>
   <div id="wrapper">
   <div id="game-container">
-    <canvas id="canvas-3d" width="200" height="20"></canvas>
+    <!-- 3D strip + stats row (above maze) -->
+    <div id="top-bar">
+      <canvas id="canvas-3d" width="200" height="20"></canvas>
+      <div id="scoreboard">
+        <h3>RESETS</h3>
+        <div id="reset-total">0</div>
+        <div class="hint">lower is better</div>
+        <div id="health-display" style="display:none; margin-top:0.5rem;">
+          <div id="health-hearts" style="color:#ff6b9d; font-size:1rem;">&#9829;&#9829;</div>
+        </div>
+      </div>
+    </div>
     <canvas id="maze" width="200" height="200"></canvas>
 
     <!-- Start Screen -->
@@ -206,7 +211,6 @@
       <div class="exit-hint">press escape to escape</div>
     </div>
 
-
     <!-- Win Screen -->
     <div id="win-screen" class="overlay hidden">
       <h1>YOU WIN!</h1>
@@ -215,26 +219,15 @@
 
   </div><!-- /game-container -->
 
-  <!-- Controls sidebar: D-pad + scoreboard, always outside the maze -->
-  <div id="controls">
-    <!-- Mobile D-Pad (touch controls, shown only on touch devices) -->
-    <div id="mobile-dpad" class="hidden">
-      <button id="dpad-up" class="dpad-btn" data-dir="n">▲</button>
-      <div class="dpad-row">
-        <button id="dpad-left" class="dpad-btn" data-dir="w">◀</button>
-        <button id="dpad-down" class="dpad-btn" data-dir="s">▼</button>
-        <button id="dpad-right" class="dpad-btn" data-dir="e">▶</button>
-      </div>
+  <!-- Mobile D-Pad (touch controls, below maze on phones) -->
+  <div id="mobile-dpad" class="hidden">
+    <button id="dpad-up" class="dpad-btn" data-dir="n">▲</button>
+    <div class="dpad-row">
+      <button id="dpad-left" class="dpad-btn" data-dir="w">◀</button>
+      <button id="dpad-down" class="dpad-btn" data-dir="s">▼</button>
+      <button id="dpad-right" class="dpad-btn" data-dir="e">▶</button>
     </div>
-    <div id="scoreboard">
-      <h3>RESETS</h3>
-      <div id="reset-total">0</div>
-      <div class="hint">lower is better</div>
-      <div id="health-display" style="display:none; margin-top:0.5rem;">
-        <div id="health-hearts" style="color:#ff6b9d; font-size:1rem;">&#9829;&#9829;</div>
-      </div>
-    </div>
-  </div><!-- /controls -->
+  </div>
   </div><!-- /wrapper -->
 
   <script>
@@ -262,12 +255,10 @@
     // uses the full screen rather than sitting in the center of a desktop browser.
     const isClockworkPi = new URLSearchParams(window.location.search).get('platform') === 'clockworkpi';
     if (isClockworkPi) {
-      // Leave 120px for the scoreboard sidebar + gap; 20px vertical breathing room.
-      const size = Math.min(window.innerHeight - 20, window.innerWidth - 120);
+      // 20px vertical breathing room; no sidebar to account for now
+      const size = Math.min(window.innerHeight - 20, window.innerWidth - 20);
       canvas.style.width  = size + 'px';
       canvas.style.height = size + 'px';
-      // Match 3D canvas width to maze canvas
-      document.getElementById('canvas-3d').style.width = size + 'px';
       // Show exit hint only on ClockworkPi
       document.getElementById('exit-hint').classList.remove('hidden');
     }
