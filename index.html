@@ -1193,6 +1193,189 @@
       }
     }
 
+    // === 3D RAYCASTER ===
+
+    const canvas3d = document.getElementById('canvas-3d');
+    const ctx3d = canvas3d.getContext('2d');
+    const FP_W = canvas3d.width;   // 200
+    const FP_H = canvas3d.height;  // 80
+    const FOV = Math.PI / 2;       // 90 degrees
+    const HALF_FOV = FOV / 2;
+    const MAX_DEPTH = 25;           // max ray distance in cells
+
+    // Direction angles: E=0, S=π/2, W=π, N=3π/2
+    const DIR_ANGLES = { e: 0, s: Math.PI / 2, w: Math.PI, n: Math.PI * 1.5 };
+
+    // Parse hex color to RGB components for brightness modulation
+    function hexToRgb(hex) {
+      const n = parseInt(hex.slice(1), 16);
+      return [(n >> 16) & 255, (n >> 8) & 255, n & 255];
+    }
+    const WALL_RGB = hexToRgb(COLORS.wall);
+    const WALL_HI_RGB = hexToRgb(COLORS.wallHighlight);
+
+    function render3DView() {
+      // Clear with ceiling (top half) and floor (bottom half)
+      ctx3d.fillStyle = COLORS.bg;
+      ctx3d.fillRect(0, 0, FP_W, FP_H / 2);
+      ctx3d.fillStyle = COLORS.corridor;
+      ctx3d.fillRect(0, FP_H / 2, FP_W, FP_H / 2);
+
+      const playerAngle = DIR_ANGLES[player.facing] || 0;
+      // Camera position: center of the player's cell
+      const px = player.x + 0.5;
+      const py = player.y + 0.5;
+
+      // Fog factor: tighter in lamplight mode for claustrophobic feel
+      const fogFactor = lamplightEnabled ? 0.6 : 0.15;
+
+      for (let col = 0; col < FP_W; col++) {
+        // Ray angle: sweep from -HALF_FOV to +HALF_FOV across the screen
+        const rayAngle = playerAngle - HALF_FOV + (col / FP_W) * FOV;
+        const sinA = Math.sin(rayAngle);
+        const cosA = Math.cos(rayAngle);
+
+        // --- DDA setup ---
+        // Current grid cell
+        let mapX = Math.floor(px);
+        let mapY = Math.floor(py);
+
+        // Ray direction sign: which way we step through the grid
+        const stepX = cosA >= 0 ? 1 : -1;
+        const stepY = sinA >= 0 ? 1 : -1;
+
+        // Distance along ray to next vertical / horizontal grid line
+        const tDeltaX = cosA !== 0 ? Math.abs(1 / cosA) : 1e30;
+        const tDeltaY = sinA !== 0 ? Math.abs(1 / sinA) : 1e30;
+
+        let tMaxX, tMaxY;
+        if (cosA >= 0) {
+          tMaxX = (mapX + 1 - px) * tDeltaX;
+        } else {
+          tMaxX = (px - mapX) * tDeltaX;
+        }
+        if (sinA >= 0) {
+          tMaxY = (mapY + 1 - py) * tDeltaY;
+        } else {
+          tMaxY = (py - mapY) * tDeltaY;
+        }
+
+        // --- DDA traversal ---
+        let hit = false;
+        let side = 0; // 0 = vertical grid line (E/W face), 1 = horizontal (N/S face)
+        let dist = 0;
+
+        for (let step = 0; step < MAX_DEPTH * 2; step++) {
+          if (tMaxX < tMaxY) {
+            // Step in X direction — check wall on the vertical grid edge
+            const wallDir = stepX > 0 ? 'e' : 'w';
+            if (mapX >= 0 && mapX < COLS && mapY >= 0 && mapY < ROWS &&
+                grid[mapY][mapX].walls[wallDir]) {
+              dist = tMaxX;
+              side = 0;
+              hit = true;
+              break;
+            }
+            tMaxX += tDeltaX;
+            mapX += stepX;
+          } else {
+            // Step in Y direction — check wall on the horizontal grid edge
+            const wallDir = stepY > 0 ? 's' : 'n';
+            if (mapX >= 0 && mapX < COLS && mapY >= 0 && mapY < ROWS &&
+                grid[mapY][mapX].walls[wallDir]) {
+              dist = tMaxY;
+              side = 1;
+              hit = true;
+              break;
+            }
+            tMaxY += tDeltaY;
+            mapY += stepY;
+          }
+
+          // Out of bounds — treat as wall at max depth
+          if (mapX < 0 || mapX >= COLS || mapY < 0 || mapY >= ROWS) {
+            dist = MAX_DEPTH;
+            hit = true;
+            side = 0;
+            break;
+          }
+        }
+
+        if (!hit) continue;
+
+        // Fix fisheye: use perpendicular distance
+        const perpDist = dist * Math.cos(rayAngle - playerAngle);
+        if (perpDist < 0.01) continue;
+
+        // Wall column height (projection)
+        const wallHeight = Math.min(FP_H, Math.floor(FP_H / perpDist));
+        const wallTop = Math.floor((FP_H - wallHeight) / 2);
+
+        // --- Procedural brick texture ---
+        // Compute where the ray hit on the wall surface (0..1 across the face)
+        let wallX; // fractional position along the wall face
+        if (side === 0) {
+          // Hit a vertical grid line (E/W face) — use Y position
+          wallX = (py + dist * sinA) % 1;
+        } else {
+          // Hit a horizontal grid line (N/S face) — use X position
+          wallX = (px + dist * cosA) % 1;
+        }
+        if (wallX < 0) wallX += 1;
+
+        // Brick parameters (in wall-texture space, mapped to column pixels)
+        const BRICK_ROWS = 4;     // number of brick rows per wall height
+        const MORTAR_PX = 1;      // mortar thickness in screen pixels
+        const brickH = wallHeight / BRICK_ROWS;
+
+        // Face shading + distance fog
+        const faceBrightness = side === 1 ? 0.7 : 1.0;
+        const fogBrightness = 1 / (1 + perpDist * fogFactor);
+        const brightness = faceBrightness * fogBrightness;
+
+        // Skip detailed texture for very far/dim walls — just draw solid
+        if (brightness < 0.08) {
+          const r = Math.floor(WALL_RGB[0] * brightness);
+          const g = Math.floor(WALL_RGB[1] * brightness);
+          const b = Math.floor(WALL_RGB[2] * brightness);
+          ctx3d.fillStyle = 'rgb(' + r + ',' + g + ',' + b + ')';
+          ctx3d.fillRect(col, wallTop, 1, wallHeight);
+          continue;
+        }
+
+        // Brick color
+        const br = Math.floor(WALL_HI_RGB[0] * brightness);
+        const bg2 = Math.floor(WALL_HI_RGB[1] * brightness);
+        const bb = Math.floor(WALL_HI_RGB[2] * brightness);
+        ctx3d.fillStyle = 'rgb(' + br + ',' + bg2 + ',' + bb + ')';
+        ctx3d.fillRect(col, wallTop, 1, wallHeight);
+
+        // Mortar lines (darker) drawn over the brick
+        const mr = Math.floor(WALL_RGB[0] * brightness * 0.4);
+        const mg = Math.floor(WALL_RGB[1] * brightness * 0.4);
+        const mb = Math.floor(WALL_RGB[2] * brightness * 0.4);
+        ctx3d.fillStyle = 'rgb(' + mr + ',' + mg + ',' + mb + ')';
+
+        for (let row = 0; row < BRICK_ROWS; row++) {
+          // Horizontal mortar line between brick rows
+          const mortarY = Math.floor(wallTop + row * brickH);
+          if (mortarY >= wallTop && mortarY < wallTop + wallHeight) {
+            ctx3d.fillRect(col, mortarY, 1, MORTAR_PX);
+          }
+
+          // Vertical mortar: offset every other row by half a brick
+          const offset = (row % 2 === 0) ? 0 : 0.5;
+          const brickPos = (wallX + offset) % 1;
+          // Draw vertical mortar when near the brick edge
+          if (brickPos < 0.08 || brickPos > 0.92) {
+            const rowTop = Math.floor(wallTop + row * brickH);
+            const rowBot = Math.floor(wallTop + (row + 1) * brickH);
+            ctx3d.fillRect(col, rowTop, 1, rowBot - rowTop);
+          }
+        }
+      }
+    }
+
     // === GAME LOOP ===
 
     let lastTime = 0;
@@ -1211,6 +1394,7 @@
         if (resetFlashTimer > 0) resetFlashTimer = Math.max(0, resetFlashTimer - dt);
         if (player.invulnerable > 0) player.invulnerable = Math.max(0, player.invulnerable - dt);
         render();
+        if (fpViewEnabled) render3DView();
       }
 
       requestAnimationFrame(gameLoop);
