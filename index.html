@@ -55,6 +55,15 @@
       width:  min(600px, calc(100vw - 1rem), calc(100dvh - 1rem));
       height: min(600px, calc(100vw - 1rem), calc(100dvh - 1rem));
     }
+    #canvas-3d {
+      display: none; /* hidden until toggled on */
+      aspect-ratio: 200 / 20;
+      /* Width matches maze canvas — same min() logic, height derived from aspect-ratio */
+      width: min(600px, calc(100vw - 1rem), calc(100dvh - 1rem));
+    }
+    #canvas-3d.active {
+      display: block;
+    }
     .overlay {
       position: absolute;
       top: 0; left: 0; right: 0; bottom: 0;
@@ -117,17 +126,15 @@
       gap: 1.25rem;
     }
 
-    /* Portrait phones: wrapper stacks vertically; controls becomes a row
-       so the D-pad sits to the left of the scoreboard, both below the canvas */
+    /* Portrait phones: keep controls beside the game (sidebar stays),
+       shrink canvas to leave room for the controls column */
     @media (orientation: portrait) and (max-width: 640px) {
-      #wrapper {
-        flex-direction: column;
-        align-items: center;
+      canvas {
+        width:  min(600px, calc(100vw - 6rem), calc(100dvh - 1rem));
+        height: min(600px, calc(100vw - 6rem), calc(100dvh - 1rem));
       }
-      #controls {
-        flex-direction: row;
-        align-items: center;
-        gap: 1.5rem;
+      #canvas-3d {
+        width: min(600px, calc(100vw - 6rem), calc(100dvh - 1rem));
       }
       #scoreboard { padding-top: 0; }
       #scoreboard .hint { display: none; }
@@ -168,6 +175,7 @@
 <body>
   <div id="wrapper">
   <div id="game-container">
+    <canvas id="canvas-3d" width="200" height="20"></canvas>
     <canvas id="maze" width="200" height="200"></canvas>
 
     <!-- Start Screen -->
@@ -184,6 +192,10 @@
       <div class="toggle-group">
         <input type="checkbox" id="lamplight-toggle" checked>
         <label for="lamplight-toggle">Lamplight</label>
+      </div>
+      <div class="toggle-group">
+        <input type="checkbox" id="fp-toggle">
+        <label for="fp-toggle">3D View</label>
       </div>
       <button id="start-btn">START</button>
       <div style="margin-top: 1rem; font-size: 0.7rem; color: #888; line-height: 1.4; max-width: 220px; text-align: center;">
@@ -218,6 +230,9 @@
       <h3>RESETS</h3>
       <div id="reset-total">0</div>
       <div class="hint">lower is better</div>
+      <div id="health-display" style="display:none; margin-top:0.5rem;">
+        <div id="health-hearts" style="color:#ff6b9d; font-size:1rem;">&#9829;&#9829;</div>
+      </div>
     </div>
   </div><!-- /controls -->
   </div><!-- /wrapper -->
@@ -251,6 +266,8 @@
       const size = Math.min(window.innerHeight - 20, window.innerWidth - 120);
       canvas.style.width  = size + 'px';
       canvas.style.height = size + 'px';
+      // Match 3D canvas width to maze canvas
+      document.getElementById('canvas-3d').style.width = size + 'px';
       // Show exit hint only on ClockworkPi
       document.getElementById('exit-hint').classList.remove('hidden');
     }
@@ -260,12 +277,13 @@
     let solutionPath = [];
     let entrance = { x: 0, y: 0, wall: 'w' };
     let exitCell = { x: 0, y: 0, wall: 'e' };
-    let player = { x: 0, y: 0, lastCheckpointIndex: 0, trail: [], visitedSet: new Set(), health: 2, invulnerable: 0 };
+    let player = { x: 0, y: 0, lastCheckpointIndex: 0, trail: [], visitedSet: new Set(), health: 2, invulnerable: 0, facing: 'e' };
     let particles = [];
     let checkpointResets = new Map(); // "x,y" -> count of resets at that cell
     let trailEnabled = true;
     let checkpointEnabled = true;
     let lamplightEnabled = false;
+    let fpViewEnabled = false;
     let monsters = [];
     let fairies = [];
     let fairyRevealTimer = 0; // seconds remaining of full-map illumination
@@ -719,6 +737,7 @@
       fadeTrail.push({ x: player.x, y: player.y, life: 1.0 });
       player.x = nx;
       player.y = ny;
+      player.facing = dir;
       player.visitedSet.add(nx + ',' + ny);
 
       // Spawn movement sparkles
@@ -958,6 +977,9 @@
         player.visitedSet = new Set([player.x + ',' + player.y]);
         player.lastCheckpointIndex = 0;
         player.health = 2;
+        // Reset facing to entrance direction
+        const oppDirs = { n: 's', s: 'n', e: 'w', w: 'e' };
+        player.facing = oppDirs[entrance.wall];
         updateHealthDisplay();
 
         spawnParticles(player.x * CELL + CELL / 2, player.y * CELL + CELL / 2, 15, 'teleport');
@@ -1177,6 +1199,221 @@
       }
     }
 
+    // === 3D RAYCASTER ===
+
+    const canvas3d = document.getElementById('canvas-3d');
+    const ctx3d = canvas3d.getContext('2d');
+    const FP_W = canvas3d.width;   // 200
+    const FP_H = canvas3d.height;  // 80
+    const FOV = Math.PI / 2;       // 90 degrees
+    const HALF_FOV = FOV / 2;
+    const MAX_DEPTH = 25;           // max ray distance in cells
+
+    // Direction angles: E=0, S=π/2, W=π, N=3π/2
+    const DIR_ANGLES = { e: 0, s: Math.PI / 2, w: Math.PI, n: Math.PI * 1.5 };
+
+    // Parse hex color to RGB components for brightness modulation
+    function hexToRgb(hex) {
+      const n = parseInt(hex.slice(1), 16);
+      return [(n >> 16) & 255, (n >> 8) & 255, n & 255];
+    }
+    const WALL_RGB = hexToRgb(COLORS.wall);
+    const WALL_HI_RGB = hexToRgb(COLORS.wallHighlight);
+
+    function render3DView() {
+      // Clear with ceiling (top half) and floor (bottom half)
+      ctx3d.fillStyle = COLORS.bg;
+      ctx3d.fillRect(0, 0, FP_W, FP_H / 2);
+      ctx3d.fillStyle = COLORS.corridor;
+      ctx3d.fillRect(0, FP_H / 2, FP_W, FP_H / 2);
+
+      // Build solution path set for floor highlighting
+      const solutionSet = new Set();
+      for (const [sx, sy] of solutionPath) {
+        solutionSet.add(sx + ',' + sy);
+      }
+
+      const playerAngle = DIR_ANGLES[player.facing] || 0;
+      // Camera position: center of the player's cell
+      const px = player.x + 0.5;
+      const py = player.y + 0.5;
+
+      // Fog factor: tighter in lamplight mode for claustrophobic feel
+      const fogFactor = lamplightEnabled ? 0.6 : 0.15;
+
+      for (let col = 0; col < FP_W; col++) {
+        // Ray angle: sweep from -HALF_FOV to +HALF_FOV across the screen
+        const rayAngle = playerAngle - HALF_FOV + (col / FP_W) * FOV;
+        const sinA = Math.sin(rayAngle);
+        const cosA = Math.cos(rayAngle);
+
+        // --- DDA setup ---
+        // Current grid cell
+        let mapX = Math.floor(px);
+        let mapY = Math.floor(py);
+
+        // Ray direction sign: which way we step through the grid
+        const stepX = cosA >= 0 ? 1 : -1;
+        const stepY = sinA >= 0 ? 1 : -1;
+
+        // Distance along ray to next vertical / horizontal grid line
+        const tDeltaX = cosA !== 0 ? Math.abs(1 / cosA) : 1e30;
+        const tDeltaY = sinA !== 0 ? Math.abs(1 / sinA) : 1e30;
+
+        let tMaxX, tMaxY;
+        if (cosA >= 0) {
+          tMaxX = (mapX + 1 - px) * tDeltaX;
+        } else {
+          tMaxX = (px - mapX) * tDeltaX;
+        }
+        if (sinA >= 0) {
+          tMaxY = (mapY + 1 - py) * tDeltaY;
+        } else {
+          tMaxY = (py - mapY) * tDeltaY;
+        }
+
+        // --- DDA traversal ---
+        let hit = false;
+        let side = 0; // 0 = vertical grid line (E/W face), 1 = horizontal (N/S face)
+        let dist = 0;
+
+        for (let step = 0; step < MAX_DEPTH * 2; step++) {
+          if (tMaxX < tMaxY) {
+            // Step in X direction — check wall on the vertical grid edge
+            const wallDir = stepX > 0 ? 'e' : 'w';
+            if (mapX >= 0 && mapX < COLS && mapY >= 0 && mapY < ROWS &&
+                grid[mapY][mapX].walls[wallDir]) {
+              dist = tMaxX;
+              side = 0;
+              hit = true;
+              break;
+            }
+            tMaxX += tDeltaX;
+            mapX += stepX;
+          } else {
+            // Step in Y direction — check wall on the horizontal grid edge
+            const wallDir = stepY > 0 ? 's' : 'n';
+            if (mapX >= 0 && mapX < COLS && mapY >= 0 && mapY < ROWS &&
+                grid[mapY][mapX].walls[wallDir]) {
+              dist = tMaxY;
+              side = 1;
+              hit = true;
+              break;
+            }
+            tMaxY += tDeltaY;
+            mapY += stepY;
+          }
+
+          // Out of bounds — treat as wall at max depth
+          if (mapX < 0 || mapX >= COLS || mapY < 0 || mapY >= ROWS) {
+            dist = MAX_DEPTH;
+            hit = true;
+            side = 0;
+            break;
+          }
+        }
+
+        if (!hit) continue;
+
+        // Fix fisheye: use perpendicular distance
+        const perpDist = dist * Math.cos(rayAngle - playerAngle);
+        if (perpDist < 0.01) continue;
+
+        // Wall column height (projection)
+        const wallHeight = Math.min(FP_H, Math.floor(FP_H / perpDist));
+        const wallTop = Math.floor((FP_H - wallHeight) / 2);
+
+        // --- Procedural brick texture ---
+        // Compute where the ray hit on the wall surface (0..1 across the face)
+        let wallX; // fractional position along the wall face
+        if (side === 0) {
+          // Hit a vertical grid line (E/W face) — use Y position
+          wallX = (py + dist * sinA) % 1;
+        } else {
+          // Hit a horizontal grid line (N/S face) — use X position
+          wallX = (px + dist * cosA) % 1;
+        }
+        if (wallX < 0) wallX += 1;
+
+        // Brick parameters (in wall-texture space, mapped to column pixels)
+        const BRICK_ROWS = 4;     // number of brick rows per wall height
+        const MORTAR_PX = 1;      // mortar thickness in screen pixels
+        const brickH = wallHeight / BRICK_ROWS;
+
+        // Face shading + distance fog
+        const faceBrightness = side === 1 ? 0.7 : 1.0;
+        const fogBrightness = 1 / (1 + perpDist * fogFactor);
+        const brightness = faceBrightness * fogBrightness;
+
+        // Skip detailed texture for very far/dim walls — just draw solid
+        if (brightness < 0.08) {
+          const r = Math.floor(WALL_RGB[0] * brightness);
+          const g = Math.floor(WALL_RGB[1] * brightness);
+          const b = Math.floor(WALL_RGB[2] * brightness);
+          ctx3d.fillStyle = 'rgb(' + r + ',' + g + ',' + b + ')';
+          ctx3d.fillRect(col, wallTop, 1, wallHeight);
+          continue;
+        }
+
+        // Brick color
+        const br = Math.floor(WALL_HI_RGB[0] * brightness);
+        const bg2 = Math.floor(WALL_HI_RGB[1] * brightness);
+        const bb = Math.floor(WALL_HI_RGB[2] * brightness);
+        ctx3d.fillStyle = 'rgb(' + br + ',' + bg2 + ',' + bb + ')';
+        ctx3d.fillRect(col, wallTop, 1, wallHeight);
+
+        // Mortar lines (darker) drawn over the brick
+        const mr = Math.floor(WALL_RGB[0] * brightness * 0.4);
+        const mg = Math.floor(WALL_RGB[1] * brightness * 0.4);
+        const mb = Math.floor(WALL_RGB[2] * brightness * 0.4);
+        ctx3d.fillStyle = 'rgb(' + mr + ',' + mg + ',' + mb + ')';
+
+        for (let row = 0; row < BRICK_ROWS; row++) {
+          // Horizontal mortar line between brick rows
+          const mortarY = Math.floor(wallTop + row * brickH);
+          if (mortarY >= wallTop && mortarY < wallTop + wallHeight) {
+            ctx3d.fillRect(col, mortarY, 1, MORTAR_PX);
+          }
+
+          // Vertical mortar: offset every other row by half a brick
+          const offset = (row % 2 === 0) ? 0 : 0.5;
+          const brickPos = (wallX + offset) % 1;
+          // Draw vertical mortar when near the brick edge
+          if (brickPos < 0.08 || brickPos > 0.92) {
+            const rowTop = Math.floor(wallTop + row * brickH);
+            const rowBot = Math.floor(wallTop + (row + 1) * brickH);
+            ctx3d.fillRect(col, rowTop, 1, rowBot - rowTop);
+          }
+        }
+
+        // --- Floor casting: amber solution path ---
+        const wallBottom = wallTop + wallHeight;
+        if (wallBottom < FP_H) {
+          for (let y = wallBottom; y < FP_H; y++) {
+            // Project screen pixel back to world floor coordinate
+            // y position on screen corresponds to a floor distance:
+            // floorDist = (FP_H / 2) / (y - FP_H / 2) (perspective projection)
+            const rowDist = (FP_H * 0.5) / (y - FP_H * 0.5);
+            // Correct for fisheye using the same cos factor
+            const corrected = rowDist / Math.cos(rayAngle - playerAngle);
+            const floorX = px + cosA * corrected;
+            const floorY = py + sinA * corrected;
+            const cellX = Math.floor(floorX);
+            const cellY = Math.floor(floorY);
+
+            if (cellX >= 0 && cellX < COLS && cellY >= 0 && cellY < ROWS &&
+                solutionSet.has(cellX + ',' + cellY)) {
+              // Amber glow, fading with distance
+              const floorFog = 1 / (1 + corrected * fogFactor);
+              const alpha = Math.min(0.6, floorFog * 0.6);
+              ctx3d.fillStyle = 'rgba(255, 170, 68, ' + alpha + ')';
+              ctx3d.fillRect(col, y, 1, 1);
+            }
+          }
+        }
+      }
+    }
+
     // === GAME LOOP ===
 
     let lastTime = 0;
@@ -1195,6 +1432,7 @@
         if (resetFlashTimer > 0) resetFlashTimer = Math.max(0, resetFlashTimer - dt);
         if (player.invulnerable > 0) player.invulnerable = Math.max(0, player.invulnerable - dt);
         render();
+        if (fpViewEnabled) render3DView();
       }
 
       requestAnimationFrame(gameLoop);
@@ -1206,6 +1444,7 @@
       trailEnabled = document.getElementById('trail-toggle').checked;
       checkpointEnabled = document.getElementById('checkpoint-toggle').checked;
       lamplightEnabled = document.getElementById('lamplight-toggle').checked;
+      fpViewEnabled = document.getElementById('fp-toggle').checked;
 
       generateMaze();
 
@@ -1234,6 +1473,17 @@
       gameState = 'playing';
       document.getElementById('start-screen').classList.add('hidden');
 
+      // Show/hide 3D view canvas
+      const canvas3dEl = document.getElementById('canvas-3d');
+      if (fpViewEnabled) {
+        canvas3dEl.classList.add('active');
+        // Initial facing: opposite of entrance wall (face inward)
+        const oppositeDirs = { n: 's', s: 'n', e: 'w', w: 'e' };
+        player.facing = oppositeDirs[entrance.wall];
+      } else {
+        canvas3dEl.classList.remove('active');
+      }
+
       render();
     }
 
@@ -1259,6 +1509,9 @@
       particles = [];
       document.getElementById('win-screen').classList.add('hidden');
       document.getElementById('start-screen').classList.remove('hidden');
+      const c3d = document.getElementById('canvas-3d');
+      c3d.classList.remove('active');
+      c3d.getContext('2d').clearRect(0, 0, c3d.width, c3d.height);
     }
 
     // Wire up buttons
