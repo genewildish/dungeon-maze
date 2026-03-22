@@ -57,7 +57,7 @@
     }
     #canvas-3d {
       display: none; /* hidden until toggled on */
-      aspect-ratio: 200 / 80;
+      aspect-ratio: 200 / 20;
       /* Width matches maze canvas — same min() logic, height derived from aspect-ratio */
       width: min(600px, calc(100vw - 1rem), calc(100dvh - 1rem));
     }
@@ -126,17 +126,15 @@
       gap: 1.25rem;
     }
 
-    /* Portrait phones: wrapper stacks vertically; controls becomes a row
-       so the D-pad sits to the left of the scoreboard, both below the canvas */
+    /* Portrait phones: keep controls beside the game (sidebar stays),
+       shrink canvas to leave room for the controls column */
     @media (orientation: portrait) and (max-width: 640px) {
-      #wrapper {
-        flex-direction: column;
-        align-items: center;
+      canvas {
+        width:  min(600px, calc(100vw - 6rem), calc(100dvh - 1rem));
+        height: min(600px, calc(100vw - 6rem), calc(100dvh - 1rem));
       }
-      #controls {
-        flex-direction: row;
-        align-items: center;
-        gap: 1.5rem;
+      #canvas-3d {
+        width: min(600px, calc(100vw - 6rem), calc(100dvh - 1rem));
       }
       #scoreboard { padding-top: 0; }
       #scoreboard .hint { display: none; }
@@ -177,7 +175,7 @@
 <body>
   <div id="wrapper">
   <div id="game-container">
-    <canvas id="canvas-3d" width="200" height="80"></canvas>
+    <canvas id="canvas-3d" width="200" height="20"></canvas>
     <canvas id="maze" width="200" height="200"></canvas>
 
     <!-- Start Screen -->
@@ -1229,6 +1227,12 @@
       ctx3d.fillStyle = COLORS.corridor;
       ctx3d.fillRect(0, FP_H / 2, FP_W, FP_H / 2);
 
+      // Build solution path set for floor highlighting
+      const solutionSet = new Set();
+      for (const [sx, sy] of solutionPath) {
+        solutionSet.add(sx + ',' + sy);
+      }
+
       const playerAngle = DIR_ANGLES[player.facing] || 0;
       // Camera position: center of the player's cell
       const px = player.x + 0.5;
@@ -1379,6 +1383,32 @@
             const rowTop = Math.floor(wallTop + row * brickH);
             const rowBot = Math.floor(wallTop + (row + 1) * brickH);
             ctx3d.fillRect(col, rowTop, 1, rowBot - rowTop);
+          }
+        }
+
+        // --- Floor casting: amber solution path ---
+        const wallBottom = wallTop + wallHeight;
+        if (wallBottom < FP_H) {
+          for (let y = wallBottom; y < FP_H; y++) {
+            // Project screen pixel back to world floor coordinate
+            // y position on screen corresponds to a floor distance:
+            // floorDist = (FP_H / 2) / (y - FP_H / 2) (perspective projection)
+            const rowDist = (FP_H * 0.5) / (y - FP_H * 0.5);
+            // Correct for fisheye using the same cos factor
+            const corrected = rowDist / Math.cos(rayAngle - playerAngle);
+            const floorX = px + cosA * corrected;
+            const floorY = py + sinA * corrected;
+            const cellX = Math.floor(floorX);
+            const cellY = Math.floor(floorY);
+
+            if (cellX >= 0 && cellX < COLS && cellY >= 0 && cellY < ROWS &&
+                solutionSet.has(cellX + ',' + cellY)) {
+              // Amber glow, fading with distance
+              const floorFog = 1 / (1 + corrected * fogFactor);
+              const alpha = Math.min(0.6, floorFog * 0.6);
+              ctx3d.fillStyle = 'rgba(255, 170, 68, ' + alpha + ')';
+              ctx3d.fillRect(col, y, 1, 1);
+            }
           }
         }
       }
