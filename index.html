@@ -26,16 +26,28 @@
     #game-container {
       position: relative;
     }
-    /* 3D strip + scoreboard sit in a row above the maze */
+    /* 3D + stats row above the maze — golden ratio sizing.
+       Maze = 1 unit, 3D = 1/φ ≈ 61.8%, stats = 1/φ² ≈ 38.2%.
+       Both are squares; together they span the maze width. */
     #top-bar {
       display: flex;
-      align-items: center;
-      gap: 0.5rem;
+      align-items: flex-end;
+      gap: 4px;
+      /* Match maze canvas width so the row aligns flush */
+      width: min(600px, calc(100vw - 1rem), calc(100dvh - 1rem));
     }
     #scoreboard {
-      width: 80px;
+      /* 1/φ² of maze width, square */
+      flex: 382;
+      aspect-ratio: 1;
       text-align: center;
-      flex-shrink: 0;
+      display: flex;
+      flex-direction: column;
+      justify-content: center;
+      align-items: center;
+      background: rgba(26, 26, 46, 0.6);
+      border: 1px solid #4a6741;
+      border-radius: 2px;
     }
     #scoreboard h3 {
       color: #ff6b9d;
@@ -64,17 +76,18 @@
     }
     #canvas-3d {
       display: none; /* hidden until toggled on */
-      aspect-ratio: 200 / 20;
-      /* Override canvas defaults — sized by flex in #top-bar, not min() */
+      /* 1/φ of maze width, square */
+      aspect-ratio: 1;
       width: auto;
       height: auto;
-      flex: 1;
+      flex: 618;
       min-width: 0;
+      border: 1px solid #4a6741;
+      border-radius: 2px;
     }
     #canvas-3d.active {
       display: block;
     }
-    /* When 3D is off, scoreboard still shows centered above the maze */
     .overlay {
       position: absolute;
       top: 0; left: 0; right: 0; bottom: 0;
@@ -171,7 +184,7 @@
   <div id="game-container">
     <!-- 3D strip + stats row (above maze) -->
     <div id="top-bar">
-      <canvas id="canvas-3d" width="200" height="20"></canvas>
+      <canvas id="canvas-3d" width="120" height="120"></canvas>
       <div id="scoreboard">
         <h3>RESETS</h3>
         <div id="reset-total">0</div>
@@ -255,10 +268,11 @@
     // uses the full screen rather than sitting in the center of a desktop browser.
     const isClockworkPi = new URLSearchParams(window.location.search).get('platform') === 'clockworkpi';
     if (isClockworkPi) {
-      // 20px vertical breathing room; no sidebar to account for now
+      // 20px breathing room on all sides
       const size = Math.min(window.innerHeight - 20, window.innerWidth - 20);
       canvas.style.width  = size + 'px';
       canvas.style.height = size + 'px';
+      document.getElementById('top-bar').style.width = size + 'px';
       // Show exit hint only on ClockworkPi
       document.getElementById('exit-hint').classList.remove('hidden');
     }
