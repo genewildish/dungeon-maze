@@ -195,6 +195,10 @@
         <input type="checkbox" id="lamplight-toggle" checked>
         <label for="lamplight-toggle">Lamplight</label>
       </div>
+      <div class="toggle-group">
+        <input type="checkbox" id="fp-toggle">
+        <label for="fp-toggle">3D View</label>
+      </div>
       <button id="start-btn">START</button>
       <div style="margin-top: 1rem; font-size: 0.7rem; color: #888; line-height: 1.4; max-width: 220px; text-align: center;">
         Arrow keys or WASD to move.<br>
@@ -270,12 +274,13 @@
     let solutionPath = [];
     let entrance = { x: 0, y: 0, wall: 'w' };
     let exitCell = { x: 0, y: 0, wall: 'e' };
-    let player = { x: 0, y: 0, lastCheckpointIndex: 0, trail: [], visitedSet: new Set(), health: 2, invulnerable: 0 };
+    let player = { x: 0, y: 0, lastCheckpointIndex: 0, trail: [], visitedSet: new Set(), health: 2, invulnerable: 0, facing: 'e' };
     let particles = [];
     let checkpointResets = new Map(); // "x,y" -> count of resets at that cell
     let trailEnabled = true;
     let checkpointEnabled = true;
     let lamplightEnabled = false;
+    let fpViewEnabled = false;
     let monsters = [];
     let fairies = [];
     let fairyRevealTimer = 0; // seconds remaining of full-map illumination
@@ -729,6 +734,7 @@
       fadeTrail.push({ x: player.x, y: player.y, life: 1.0 });
       player.x = nx;
       player.y = ny;
+      player.facing = dir;
       player.visitedSet.add(nx + ',' + ny);
 
       // Spawn movement sparkles
@@ -1216,6 +1222,7 @@
       trailEnabled = document.getElementById('trail-toggle').checked;
       checkpointEnabled = document.getElementById('checkpoint-toggle').checked;
       lamplightEnabled = document.getElementById('lamplight-toggle').checked;
+      fpViewEnabled = document.getElementById('fp-toggle').checked;
 
       generateMaze();
 
@@ -1244,6 +1251,17 @@
       gameState = 'playing';
       document.getElementById('start-screen').classList.add('hidden');
 
+      // Show/hide 3D view canvas
+      const canvas3dEl = document.getElementById('canvas-3d');
+      if (fpViewEnabled) {
+        canvas3dEl.classList.add('active');
+        // Initial facing: opposite of entrance wall (face inward)
+        const oppositeDirs = { n: 's', s: 'n', e: 'w', w: 'e' };
+        player.facing = oppositeDirs[entrance.wall];
+      } else {
+        canvas3dEl.classList.remove('active');
+      }
+
       render();
     }
 
@@ -1269,6 +1287,9 @@
       particles = [];
       document.getElementById('win-screen').classList.add('hidden');
       document.getElementById('start-screen').classList.remove('hidden');
+      const c3d = document.getElementById('canvas-3d');
+      c3d.classList.remove('active');
+      c3d.getContext('2d').clearRect(0, 0, c3d.width, c3d.height);
     }
 
     // Wire up buttons
