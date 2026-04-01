@@ -141,10 +141,45 @@
       letter-spacing: 0.05em;
       font-style: italic;
     }
-    /* Portrait phones: everything stacks vertically, d-pad below maze */
+    /* Portrait phones: everything stacks vertically, d-pad below maze.
+       Budget ~11rem for scoreboard row + d-pad + gaps so the maze
+       canvas shrinks to fit within 100dvh on small iPhones. */
     @media (orientation: portrait) and (max-width: 640px) {
+      /* Content-based height instead of giant square */
+      #scoreboard {
+        aspect-ratio: auto;
+        padding: 0.25rem;
+      }
+      #scoreboard h3 { font-size: 0.65rem; margin-bottom: 0.1rem; }
       #scoreboard .hint { display: none; }
       #reset-total { font-size: 1.5rem; }
+
+      /* Shrink maze to leave room for scoreboard row + d-pad */
+      #maze {
+        width:  min(600px, calc(100vw - 1rem), calc(100dvh - 11rem));
+        height: min(600px, calc(100vw - 1rem), calc(100dvh - 11rem));
+      }
+      #top-bar {
+        width: min(600px, calc(100vw - 1rem), calc(100dvh - 11rem));
+      }
+
+      /* Keep 3D view compact when toggled on */
+      #canvas-3d {
+        flex: 0 0 3.5rem;
+        width: 3.5rem;
+        height: 3.5rem;
+      }
+      #canvas-3d.active { display: block; }
+
+      /* Smaller but still tappable d-pad buttons */
+      .dpad-btn { width: 3rem; height: 3rem; font-size: 1.5rem; }
+
+      /* Scale overlay content for the smaller game area */
+      .overlay h1 { font-size: 1.5rem; margin-bottom: 0.5rem; }
+      .overlay button { font-size: 0.85rem; padding: 0.35rem 1rem; }
+      .toggle-group { margin: 0.3rem 0; }
+      .toggle-group label { font-size: 0.8rem; }
+      .toggle-group input[type="checkbox"] { width: 16px; height: 16px; }
     }
 
     /* Mobile D-Pad (touch controls on phones/tablets) */
