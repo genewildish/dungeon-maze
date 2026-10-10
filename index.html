@@ -817,7 +817,7 @@
       // Enter/Space advance through start and win screens (works with D-pad center button)
       if (e.key === 'Enter' || e.key === ' ') {
         if (gameState === 'start') { startGame(); return; }
-        if (gameState === 'win')   { playAgain(); return; }
+        if (gameState === 'win')   { if (winScreenShown) playAgain(); return; }
       }
       const keyMap = {
         ArrowUp: 'n', ArrowDown: 's', ArrowLeft: 'w', ArrowRight: 'e',
@@ -1192,9 +1192,11 @@
         if (!prevGamepadButtons[gi]) prevGamepadButtons[gi] = new Array(gp.buttons.length).fill(false);
 
         if (gameState === 'start' || gameState === 'win') {
-          // Rising-edge any-button → advance screen
+          // Rising-edge any-button → advance screen. On a win, wait until the
+          // win overlay is actually showing so the celebration can't be skipped.
+          const canAdvance = gameState === 'start' || winScreenShown;
           for (let i = 0; i < gp.buttons.length; i++) {
-            if (gp.buttons[i].pressed && !prevGamepadButtons[gi][i]) {
+            if (canAdvance && gp.buttons[i].pressed && !prevGamepadButtons[gi][i]) {
               if (gameState === 'start') startGame();
               else playAgain();
               prevGamepadButtons[gi] = Array.from(gp.buttons, b => b.pressed);
@@ -1483,6 +1485,11 @@
     // === GAME FLOW ===
 
     function startGame() {
+      // A new game must never inherit a pending win celebration or overlay
+      clearWinTimers();
+      winScreenShown = false;
+      document.getElementById('win-screen').classList.add('hidden');
+
       trailEnabled = document.getElementById('trail-toggle').checked;
       checkpointEnabled = document.getElementById('checkpoint-toggle').checked;
       lamplightEnabled = document.getElementById('lamplight-toggle').checked;
@@ -1529,24 +1536,41 @@
       render();
     }
 
+    // Pending celebration timeouts. Tracked so that leaving the win state
+    // cancels them — otherwise a late timeout pops "YOU WIN!" over the next game.
+    let winTimers = [];
+    // True once the win overlay is on screen. Until then, start/play-again
+    // input is ignored so a stray keypress can't skip the celebration.
+    let winScreenShown = false;
+
+    function clearWinTimers() {
+      for (const id of winTimers) clearTimeout(id);
+      winTimers = [];
+    }
+
     function winGame() {
       gameState = 'win';
+      winScreenShown = false;
+      clearWinTimers();
       // Celebration sparkle burst
       for (let i = 0; i < 5; i++) {
-        setTimeout(() => {
+        winTimers.push(setTimeout(() => {
           spawnParticles(
             Math.random() * canvas.width,
             Math.random() * canvas.height,
             15, 'win'
           );
-        }, i * 200);
+        }, i * 200));
       }
-      setTimeout(() => {
+      winTimers.push(setTimeout(() => {
         document.getElementById('win-screen').classList.remove('hidden');
-      }, 1200);
+        winScreenShown = true;
+      }, 1200));
     }
 
     function playAgain() {
+      clearWinTimers();
+      winScreenShown = false;
       gameState = 'start';
       particles = [];
       document.getElementById('win-screen').classList.add('hidden');
