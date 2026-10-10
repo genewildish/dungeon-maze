@@ -141,6 +141,7 @@
       letter-spacing: 0.05em;
       font-style: italic;
     }
+    .exit-hint.hidden { display: none; }
     /* Portrait phones: everything stacks vertically, d-pad below maze.
        Budget ~11rem for scoreboard row + d-pad + gaps so the maze
        canvas shrinks to fit within 100dvh on small iPhones. */
@@ -256,7 +257,8 @@
         Find the glowing exit.<br>
         Lamplight mode adds monsters and fairies.
       </div>
-      <div class="exit-hint">press escape to escape</div>
+      <!-- Exit hint shown only on ClockworkPi (when ?platform=clockworkpi) -->
+      <div id="exit-hint" class="exit-hint hidden">press escape to escape</div>
     </div>
 
     <!-- Win Screen -->
