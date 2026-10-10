@@ -17,29 +17,59 @@
       color: #cccccc;
       overflow: hidden; /* no scroll bounce on mobile */
     }
+    /* === LAYOUT ===
+       Every panel is sized from one length, --maze (the maze canvas edge),
+       and --maze is derived from the viewport, so the whole game always fits
+       on screen — nothing is ever pushed past an edge it can't scroll to.
+
+       Golden-ratio panels: 3D view = 1/φ ≈ 61.8% of the maze, stats =
+       1/φ² ≈ 38.2%. Portrait stacks them in a band above the maze; landscape
+       stands them in a column beside it. Either way the band adds --side ×
+       maze along the long axis: 1/φ with the 3D view on, 1/φ² with it off. */
     #wrapper {
+      --vh: 100vh;
+      --max: 600px;    /* maze size cap on big screens */
+      --pad: 1rem;     /* breathing room around the whole game */
+      --gap: 4px;      /* between maze and panels */
+      --side: 0.382;
+      --dpad-h: 0px;   /* touch D-pad height when it sits below the game */
+      --dpad-w: 0px;   /* touch D-pad width when it sits beside the game */
+      --maze: min(var(--max), calc(100vw - var(--pad)),
+                  calc((var(--vh) - var(--pad) - var(--gap) - var(--dpad-h)) / (1 + var(--side))));
+      --fp-size: calc((var(--maze) - var(--gap)) * 0.618);
+      --stats-size: calc((var(--maze) - var(--gap)) * 0.382);
       display: flex;
       flex-direction: column;
       align-items: center;
       gap: 0.5rem;
     }
+    /* dvh tracks mobile browser toolbars; older browsers keep the vh fallback */
+    @supports (height: 100dvh) { #wrapper { --vh: 100dvh; } }
+    #wrapper.fp-on { --side: 0.618; }
+    /* D-pad: two rows of 3.5rem buttons stacked, or three buttons across,
+       plus the wrapper gap and the D-pad's own gaps */
+    #wrapper.touch { --dpad-h: 8.25rem; --dpad-w: 11.5rem; }
+    /* ClockworkPi: lift the desktop cap so the game fills the device screen */
+    #wrapper.clockworkpi { --max: 100vw; }
     #game-container {
       position: relative;
+      display: flex;
+      flex-direction: column;
+      gap: var(--gap);
     }
-    /* 3D + stats row above the maze — golden ratio sizing.
-       Maze = 1 unit, 3D = 1/φ ≈ 61.8%, stats = 1/φ² ≈ 38.2%.
-       Both are squares; together they span the maze width. */
+    /* 3D + stats band — above the maze in portrait, beside it in landscape */
     #top-bar {
       display: flex;
       align-items: flex-end;
-      gap: 4px;
-      /* Match maze canvas width so the row aligns flush */
-      width: min(600px, calc(100vw - 1rem), calc(100dvh - 1rem));
+      justify-content: flex-end; /* stats keeps its corner when 3D is off */
+      gap: var(--gap);
+      width: var(--maze);
     }
     #scoreboard {
-      /* 1/φ² of maze width, square */
-      flex: 382;
-      aspect-ratio: 1;
+      /* 1/φ² of the maze, square */
+      flex: none;
+      width: var(--stats-size);
+      height: var(--stats-size);
       text-align: center;
       display: flex;
       flex-direction: column;
@@ -69,23 +99,21 @@
       display: block;
       image-rendering: pixelated;
       image-rendering: crisp-edges;
-      /* Responsive: shrink to fit whichever viewport dimension is smaller,
-         leaving 1rem breathing room. Caps at 600px on desktop. */
-      width:  min(600px, calc(100vw - 1rem), calc(100dvh - 1rem));
-      height: min(600px, calc(100vw - 1rem), calc(100dvh - 1rem));
+    }
+    #maze {
+      width: var(--maze);
+      height: var(--maze);
     }
     #canvas-3d {
-      display: none; /* hidden until toggled on */
-      /* 1/φ of maze width, square */
-      aspect-ratio: 1;
-      width: auto;
-      height: auto;
-      flex: 618;
-      min-width: 0;
+      display: none; /* hidden until the 3D view is turned on */
+      /* 1/φ of the maze, square */
+      flex: none;
+      width: var(--fp-size);
+      height: var(--fp-size);
       border: 1px solid #4a6741;
       border-radius: 2px;
     }
-    #canvas-3d.active {
+    #wrapper.fp-on #canvas-3d {
       display: block;
     }
     .overlay {
@@ -141,48 +169,9 @@
       letter-spacing: 0.05em;
       font-style: italic;
     }
-    /* Portrait phones: everything stacks vertically, d-pad below maze.
-       Budget ~11rem for scoreboard row + d-pad + gaps so the maze
-       canvas shrinks to fit within 100dvh on small iPhones. */
-    @media (orientation: portrait) and (max-width: 640px) {
-      /* Content-based height instead of giant square */
-      #scoreboard {
-        aspect-ratio: auto;
-        padding: 0.25rem;
-      }
-      #scoreboard h3 { font-size: 0.65rem; margin-bottom: 0.1rem; }
-      #scoreboard .hint { display: none; }
-      #reset-total { font-size: 1.5rem; }
-
-      /* Shrink maze to leave room for scoreboard row + d-pad */
-      #maze {
-        width:  min(600px, calc(100vw - 1rem), calc(100dvh - 11rem));
-        height: min(600px, calc(100vw - 1rem), calc(100dvh - 11rem));
-      }
-      #top-bar {
-        width: min(600px, calc(100vw - 1rem), calc(100dvh - 11rem));
-      }
-
-      /* Keep 3D view compact when toggled on */
-      #canvas-3d {
-        flex: 0 0 3.5rem;
-        width: 3.5rem;
-        height: 3.5rem;
-      }
-      #canvas-3d.active { display: block; }
-
-      /* Smaller but still tappable d-pad buttons */
-      .dpad-btn { width: 3rem; height: 3rem; font-size: 1.5rem; }
-
-      /* Scale overlay content for the smaller game area */
-      .overlay h1 { font-size: 1.5rem; margin-bottom: 0.5rem; }
-      .overlay button { font-size: 0.85rem; padding: 0.35rem 1rem; }
-      .toggle-group { margin: 0.3rem 0; }
-      .toggle-group label { font-size: 0.8rem; }
-      .toggle-group input[type="checkbox"] { width: 16px; height: 16px; }
-    }
-
-    /* Mobile D-Pad (touch controls on phones/tablets) */
+    .exit-hint.hidden { display: none; }
+    /* Mobile D-Pad (touch controls on phones/tablets). Base rules come before
+       the media queries below so their size overrides can take effect. */
     #mobile-dpad {
       display: flex;
       flex-direction: column;
@@ -211,6 +200,66 @@
     .dpad-row {
       display: flex;
       gap: 0.25rem;
+    }
+
+    /* Landscape (desktops, landscape phones, ClockworkPi): height is the
+       scarce axis, so the 3D + stats band becomes a column beside the maze
+       and the D-pad moves to the right. With 3D on, maze + column form a
+       φ:1 golden rectangle: 3D square on top, stats panel below it. */
+    @media (orientation: landscape) {
+      #wrapper {
+        flex-direction: row;
+        --maze: min(var(--max), calc(var(--vh) - var(--pad)),
+                    calc((100vw - var(--pad) - var(--gap) - var(--dpad-w)) / (1 + var(--side))));
+      }
+      #game-container { flex-direction: row; }
+      #top-bar {
+        flex-direction: column;
+        justify-content: flex-start;
+        width: auto;
+      }
+      #wrapper.fp-on #scoreboard { width: var(--fp-size); }
+      #mobile-dpad { margin-top: 0; }
+    }
+
+    /* Portrait phones: compact band (small 3D square + stats strip) above the
+       maze, D-pad below. The band has a fixed height so the maze can be sized
+       exactly from the space that's left on small iPhones. */
+    @media (orientation: portrait) and (max-width: 640px) {
+      #wrapper {
+        --bar-h: 5rem;
+        --maze: min(var(--max), calc(100vw - var(--pad)),
+                    calc(var(--vh) - var(--pad) - var(--bar-h) - var(--gap) - var(--dpad-h)));
+      }
+      /* Two rows of the smaller 3rem buttons below */
+      #wrapper.touch { --dpad-h: 7.25rem; }
+
+      #top-bar { height: var(--bar-h); }
+      #scoreboard {
+        flex: 1;
+        width: auto;
+        height: 100%;
+        padding: 0.25rem;
+      }
+      #scoreboard h3 { font-size: 0.65rem; margin-bottom: 0.1rem; }
+      #scoreboard .hint { display: none; }
+      #reset-total { font-size: 1.5rem; }
+
+      /* Keep 3D view compact when toggled on */
+      #canvas-3d {
+        width: 3.5rem;
+        height: 3.5rem;
+      }
+
+      /* Smaller but still tappable d-pad buttons */
+      .dpad-btn { width: 3rem; height: 3rem; font-size: 1.5rem; }
+
+      /* Scale overlay content for the smaller game area */
+      .overlay h1 { font-size: 1.5rem; margin-bottom: 0.5rem; }
+      .overlay button { font-size: 0.85rem; padding: 0.35rem 1rem; }
+      .toggle-group { margin: 0.3rem 0; }
+      .toggle-group label { font-size: 0.8rem; }
+      .toggle-group input[type="checkbox"] { width: 16px; height: 16px; }
     }
   </style>
 </head>
@@ -256,7 +305,8 @@
         Find the glowing exit.<br>
         Lamplight mode adds monsters and fairies.
       </div>
-      <div class="exit-hint">press escape to escape</div>
+      <!-- Exit hint shown only on ClockworkPi (when ?platform=clockworkpi) -->
+      <div id="exit-hint" class="exit-hint hidden">press escape to escape</div>
     </div>
 
     <!-- Win Screen -->
@@ -299,15 +349,12 @@
     const ctx = canvas.getContext('2d');
 
     // Detect ClockworkPi (or any embedded target) via ?platform=clockworkpi URL param.
-    // When running on-device, scale the canvas to fill the viewport so the game
-    // uses the full screen rather than sitting in the center of a desktop browser.
+    // When running on-device, scale the game to fill the viewport so it uses the
+    // full screen rather than sitting in the center of a desktop browser.
     const isClockworkPi = new URLSearchParams(window.location.search).get('platform') === 'clockworkpi';
     if (isClockworkPi) {
-      // 20px breathing room on all sides
-      const size = Math.min(window.innerHeight - 20, window.innerWidth - 20);
-      canvas.style.width  = size + 'px';
-      canvas.style.height = size + 'px';
-      document.getElementById('top-bar').style.width = size + 'px';
+      // Lifts the 600px cap; the CSS layout then sizes everything to the screen
+      document.getElementById('wrapper').classList.add('clockworkpi');
       // Show exit hint only on ClockworkPi
       document.getElementById('exit-hint').classList.remove('hidden');
     }
@@ -806,22 +853,39 @@
       render();
     }
 
+    // Movement keys. Letters match by physical key (e.code), so WASD keeps
+    // working with Caps Lock or Shift held and stays in the same place on
+    // non-QWERTY layouts (ZQSD on AZERTY). Arrows also match by e.key.
+    const KEY_DIRS = {
+      ArrowUp: 'n', ArrowDown: 's', ArrowLeft: 'w', ArrowRight: 'e',
+      KeyW: 'n', KeyS: 's', KeyA: 'w', KeyD: 'e'
+    };
+
     document.addEventListener('keydown', (e) => {
-      // Escape exits the game (back to desktop)
+      // Leave browser and OS shortcuts (Cmd+W, Ctrl+D, ...) alone
+      if (e.ctrlKey || e.metaKey || e.altKey) return;
+
+      // Escape exits to the desktop — ClockworkPi kiosk only. In a normal
+      // browser tab, window.close() can shut the player's tab with no warning.
       if (e.key === 'Escape') {
-        window.close(); // Works in kiosk mode on most systems
+        if (isClockworkPi) window.close();
         return;
       }
-      // Enter/Space advance through start and win screens (works with D-pad center button)
+
+      // Enter/Space advance through start and win screens (works with D-pad center button).
+      // A focused control handles these keys itself — Space toggles a checkbox,
+      // Space/Enter press a button — so don't act on them here too: that would
+      // read the toggles before the checkbox flips, or fire a button twice.
       if (e.key === 'Enter' || e.key === ' ') {
+        const t = e.target;
+        const controlHandlesKey = t instanceof Element &&
+          (t.matches('button') || (e.key === ' ' && t.matches('input')));
+        if (e.repeat || controlHandlesKey) return;
         if (gameState === 'start') { startGame(); return; }
-        if (gameState === 'win')   { playAgain(); return; }
+        if (gameState === 'win')   { if (winScreenShown) playAgain(); return; }
       }
-      const keyMap = {
-        ArrowUp: 'n', ArrowDown: 's', ArrowLeft: 'w', ArrowRight: 'e',
-        w: 'n', s: 's', a: 'w', d: 'e'
-      };
-      const dir = keyMap[e.key];
+
+      const dir = KEY_DIRS[e.code] || KEY_DIRS[e.key];
       if (dir) {
         e.preventDefault();
         movePlayer(dir);
@@ -1190,9 +1254,11 @@
         if (!prevGamepadButtons[gi]) prevGamepadButtons[gi] = new Array(gp.buttons.length).fill(false);
 
         if (gameState === 'start' || gameState === 'win') {
-          // Rising-edge any-button → advance screen
+          // Rising-edge any-button → advance screen. On a win, wait until the
+          // win overlay is actually showing so the celebration can't be skipped.
+          const canAdvance = gameState === 'start' || winScreenShown;
           for (let i = 0; i < gp.buttons.length; i++) {
-            if (gp.buttons[i].pressed && !prevGamepadButtons[gi][i]) {
+            if (canAdvance && gp.buttons[i].pressed && !prevGamepadButtons[gi][i]) {
               if (gameState === 'start') startGame();
               else playAgain();
               prevGamepadButtons[gi] = Array.from(gp.buttons, b => b.pressed);
@@ -1481,6 +1547,11 @@
     // === GAME FLOW ===
 
     function startGame() {
+      // A new game must never inherit a pending win celebration or overlay
+      clearWinTimers();
+      winScreenShown = false;
+      document.getElementById('win-screen').classList.add('hidden');
+
       trailEnabled = document.getElementById('trail-toggle').checked;
       checkpointEnabled = document.getElementById('checkpoint-toggle').checked;
       lamplightEnabled = document.getElementById('lamplight-toggle').checked;
@@ -1512,46 +1583,64 @@
 
       gameState = 'playing';
       document.getElementById('start-screen').classList.add('hidden');
+      // Drop focus from the now-hidden START button or checkbox. Some browsers
+      // keep focus on hidden elements, and a stale focused button would swallow
+      // Enter/Space on the win screen.
+      document.activeElement?.blur();
 
-      // Show/hide 3D view canvas
-      const canvas3dEl = document.getElementById('canvas-3d');
+      // Show/hide 3D view canvas (the class also switches the layout to 3D sizing)
+      document.getElementById('wrapper').classList.toggle('fp-on', fpViewEnabled);
       if (fpViewEnabled) {
-        canvas3dEl.classList.add('active');
         // Initial facing: opposite of entrance wall (face inward)
         const oppositeDirs = { n: 's', s: 'n', e: 'w', w: 'e' };
         player.facing = oppositeDirs[entrance.wall];
-      } else {
-        canvas3dEl.classList.remove('active');
       }
 
       render();
     }
 
+    // Pending celebration timeouts. Tracked so that leaving the win state
+    // cancels them — otherwise a late timeout pops "YOU WIN!" over the next game.
+    let winTimers = [];
+    // True once the win overlay is on screen. Until then, start/play-again
+    // input is ignored so a stray keypress can't skip the celebration.
+    let winScreenShown = false;
+
+    function clearWinTimers() {
+      for (const id of winTimers) clearTimeout(id);
+      winTimers = [];
+    }
+
     function winGame() {
       gameState = 'win';
+      winScreenShown = false;
+      clearWinTimers();
       // Celebration sparkle burst
       for (let i = 0; i < 5; i++) {
-        setTimeout(() => {
+        winTimers.push(setTimeout(() => {
           spawnParticles(
             Math.random() * canvas.width,
             Math.random() * canvas.height,
             15, 'win'
           );
-        }, i * 200);
+        }, i * 200));
       }
-      setTimeout(() => {
+      winTimers.push(setTimeout(() => {
         document.getElementById('win-screen').classList.remove('hidden');
-      }, 1200);
+        winScreenShown = true;
+      }, 1200));
     }
 
     function playAgain() {
+      clearWinTimers();
+      winScreenShown = false;
       gameState = 'start';
       particles = [];
       document.getElementById('win-screen').classList.add('hidden');
       document.getElementById('start-screen').classList.remove('hidden');
-      const c3d = document.getElementById('canvas-3d');
-      c3d.classList.remove('active');
-      c3d.getContext('2d').clearRect(0, 0, c3d.width, c3d.height);
+      document.activeElement?.blur(); // the hidden Play Again button
+      document.getElementById('wrapper').classList.remove('fp-on');
+      ctx3d.clearRect(0, 0, FP_W, FP_H);
     }
 
     // Wire up buttons
@@ -1569,6 +1658,8 @@
 
     if (isTouchDevice()) {
       document.getElementById('mobile-dpad').classList.remove('hidden');
+      // Tells the CSS layout to leave room for the D-pad
+      document.getElementById('wrapper').classList.add('touch');
 
       // Wire up D-pad buttons
       document.querySelectorAll('.dpad-btn').forEach(btn => {
