@@ -808,22 +808,39 @@
       render();
     }
 
+    // Movement keys. Letters match by physical key (e.code), so WASD keeps
+    // working with Caps Lock or Shift held and stays in the same place on
+    // non-QWERTY layouts (ZQSD on AZERTY). Arrows also match by e.key.
+    const KEY_DIRS = {
+      ArrowUp: 'n', ArrowDown: 's', ArrowLeft: 'w', ArrowRight: 'e',
+      KeyW: 'n', KeyS: 's', KeyA: 'w', KeyD: 'e'
+    };
+
     document.addEventListener('keydown', (e) => {
-      // Escape exits the game (back to desktop)
+      // Leave browser and OS shortcuts (Cmd+W, Ctrl+D, ...) alone
+      if (e.ctrlKey || e.metaKey || e.altKey) return;
+
+      // Escape exits to the desktop — ClockworkPi kiosk only. In a normal
+      // browser tab, window.close() can shut the player's tab with no warning.
       if (e.key === 'Escape') {
-        window.close(); // Works in kiosk mode on most systems
+        if (isClockworkPi) window.close();
         return;
       }
-      // Enter/Space advance through start and win screens (works with D-pad center button)
+
+      // Enter/Space advance through start and win screens (works with D-pad center button).
+      // A focused control handles these keys itself — Space toggles a checkbox,
+      // Space/Enter press a button — so don't act on them here too: that would
+      // read the toggles before the checkbox flips, or fire a button twice.
       if (e.key === 'Enter' || e.key === ' ') {
+        const t = e.target;
+        const controlHandlesKey = t instanceof Element &&
+          (t.matches('button') || (e.key === ' ' && t.matches('input')));
+        if (e.repeat || controlHandlesKey) return;
         if (gameState === 'start') { startGame(); return; }
         if (gameState === 'win')   { if (winScreenShown) playAgain(); return; }
       }
-      const keyMap = {
-        ArrowUp: 'n', ArrowDown: 's', ArrowLeft: 'w', ArrowRight: 'e',
-        w: 'n', s: 's', a: 'w', d: 'e'
-      };
-      const dir = keyMap[e.key];
+
+      const dir = KEY_DIRS[e.code] || KEY_DIRS[e.key];
       if (dir) {
         e.preventDefault();
         movePlayer(dir);
@@ -1521,6 +1538,10 @@
 
       gameState = 'playing';
       document.getElementById('start-screen').classList.add('hidden');
+      // Drop focus from the now-hidden START button or checkbox. Some browsers
+      // keep focus on hidden elements, and a stale focused button would swallow
+      // Enter/Space on the win screen.
+      document.activeElement?.blur();
 
       // Show/hide 3D view canvas
       const canvas3dEl = document.getElementById('canvas-3d');
@@ -1575,6 +1596,7 @@
       particles = [];
       document.getElementById('win-screen').classList.add('hidden');
       document.getElementById('start-screen').classList.remove('hidden');
+      document.activeElement?.blur(); // the hidden Play Again button
       const c3d = document.getElementById('canvas-3d');
       c3d.classList.remove('active');
       c3d.getContext('2d').clearRect(0, 0, c3d.width, c3d.height);
